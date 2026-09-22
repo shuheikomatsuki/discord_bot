@@ -1,0 +1,31 @@
+# スラッシュコマンドを Discord に登録するワークフロー。
+# 手元に Node.js を用意せずに登録したいとき用。
+# GitHub の Settings > Secrets and variables > Actions に DISCORD_BOT_TOKEN を登録してから、
+# Actions タブ > register-commands > Run workflow で実行する。
+name: register-commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      clear:
+        description: '登録済みのコマンドをすべて削除する'
+        type: boolean
+        default: false
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run register ${{ inputs.clear && '-- --clear' || '' }}
+        env:
+          # 公開情報なので wrangler.jsonc と同じ値をそのまま使う
+          DISCORD_APPLICATION_ID: '1334491224127569940'
+          DISCORD_GUILD_ID: '1211154854207160440'
+          # 秘密情報。リポジトリの Secrets から渡す
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
