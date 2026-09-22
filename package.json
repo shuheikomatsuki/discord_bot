@@ -1,0 +1,32 @@
+{
+  "name": "discord-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "register": "tsx scripts/register-commands.ts",
+    "db:create": "wrangler d1 create discord-bot",
+    "db:migrate:local": "wrangler d1 migrations apply discord-bot --local",
+    "db:migrate": "wrangler d1 migrations apply discord-bot --remote"
+  },
+  "dependencies": {
+    "discord-api-types": "^0.38.55",
+    "hono": "^4.13.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@cloudflare/workers-types": "^5.20260922.1",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1",
+    "wrangler": "^4.136.1"
+  }
+}

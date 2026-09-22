@@ -40,10 +40,10 @@ Discord Bot の実装方式は2つある。Cloudflare Workers で動かす場合
 | ランタイム | Cloudflare Workers | 無料枠 10万req/日 |
 | HTTP フレームワーク | **Hono** | Workers 前提、軽量、型が強い |
 | DB | **Cloudflare D1**（SQLite） | Workers からバインディングで直結。無料枠あり |
-| ORM | **Drizzle ORM**（任意） | D1 対応、型安全、マイグレーション生成が楽。薄いので生SQLでも可 |
+| DB アクセス | **D1 の prepared statement を薄い repository で包む** | ORM を入れていない。テーブルが1つで、配信ロックに `meta.changes` を使う楽観ロック UPDATE を書きたいため、生SQLのほうが素直で依存も減る |
 | 署名検証 | WebCrypto の Ed25519（または `discord-interactions` の `verifyKey`） | Workers は Ed25519 を標準サポート |
 | デプロイ | Wrangler + GitHub Actions | 無料 |
-| テスト | Vitest + `@cloudflare/vitest-pool-workers` | 実 Workers ランタイムでテストできる |
+| テスト | **Vitest**（Node 環境） | 価値があるのは時刻計算・cron 解釈・署名検証といった純粋な処理。Workers ランタイムが要るテストが出てきたら `@cloudflare/vitest-pool-workers` を足す |
 | Lint/Format | Biome（または ESLint + Prettier） | Biome は1つで済んで速い |
 
 ### 補足：`discord-hono` という選択肢
@@ -173,7 +173,11 @@ src/
 │   ├── http.ts                 # Hono app の組み立て
 │   ├── verify.ts               # Ed25519 署名検証ミドルウェア
 │   ├── router.ts               # interaction を type と名前で dispatch
-│   ├── respond.ts              # reply / defer / followUp / autocomplete ヘルパ
+│   ├── respond.ts              # reply / defer / autocomplete ヘルパ
+│   ├── options.ts              # サブコマンドを剥がしてオプションを型付きで取り出す
+│   ├── time.ts                 # タイムゾーンを跨ぐ時刻計算（Intl のみ、依存なし）
+│   ├── ulid.ts                 # 時系列ソート可能なID（自前の最小実装）
+│   ├── cron.ts                 # scheduled() から全 feature の CronJob を回す
 │   ├── customId.ts             # ボタン等の custom_id エンコード・デコード
 │   ├── registry.ts             # ★ 全 feature を集約する唯一の場所
 │   └── types.ts                # Feature / Command / CronJob のインターフェース
@@ -182,20 +186,16 @@ src/
 │   ├── rest.ts                 # Bot Token を使う REST クライアント（薄く）
 │   └── mentions.ts             # メンション文字列と allowed_mentions の生成
 │
-├── db/
-│   ├── client.ts               # drizzle(env.DB)
-│   └── schema.ts               # 各 feature の schema を re-export するだけ
-│
 └── features/
     ├── reminder/
     │   ├── index.ts            # Feature オブジェクトを default export
-    │   ├── commands.ts         # /remind の定義 + ハンドラ
-    │   ├── autocomplete.ts     # /remind delete のID補完
-    │   ├── cron.ts             # 毎分の配信処理
-    │   ├── service.ts          # ドメインロジック（次回発火時刻の計算など）
-    │   ├── repository.ts       # D1 アクセス
-    │   ├── schedule.ts         # interval / cron 式のパースと次回計算
-    │   └── schema.ts           # Drizzle テーブル定義
+    │   ├── commands.ts         # /remind の定義・ハンドラ・オートコンプリート
+    │   ├── components.ts       # 一時停止 / 再開 / 削除ボタン
+    │   ├── cron.ts             # 毎分の配信処理（リース取得と結果の確定）
+    │   ├── service.ts          # Embed・一覧表示などの組み立て
+    │   ├── repository.ts       # D1 アクセス（CRUD + 配信用クエリ）
+    │   ├── schedule.ts         # 日時・頻度・cron の解釈と次回発火時刻の計算
+    │   └── schema.ts           # 行の型と D1 行 -> ドメイン型の変換
     └── ping/
         └── index.ts            # 最小のお手本として残しておく
 
@@ -294,14 +294,16 @@ cloudflared tunnel --url http://localhost:8787   # 無料・アカウント不�
 
 ## 9. マイグレーション運用
 
+`migrations/` に連番の SQL ファイルを手で置く。
+
 ```bash
-# スキーマ変更（Drizzle 使用時）
-npx drizzle-kit generate           # migrations/ にSQL生成
-npx wrangler d1 migrations apply <DB_NAME> --local    # ローカル適用
-npx wrangler d1 migrations apply <DB_NAME> --remote   # 本番適用
+# migrations/0002_xxx.sql を追加したあと
+npm run db:migrate:local   # ローカル D1 に適用
+npm run db:migrate         # 本番 D1 に適用
 ```
 
-D1 はマイグレーション履歴テーブルを Cloudflare 側で管理してくれるので、手動管理は不要。
+D1 はどこまで適用したかを Cloudflare 側のテーブルで管理してくれるので、手動管理は不要。
+CI（`.github/workflows/deploy.yml`）でも deploy の前に `--remote` で流している。
 
 ---
 

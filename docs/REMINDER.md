@@ -70,7 +70,7 @@ CREATE TABLE reminders (
   message          TEXT    NOT NULL,
 
   -- メンション
-  mention_type     TEXT    NOT NULL DEFAULT 'none',  -- none | everyone | here | users | roles | mixed
+  mention_type     TEXT    NOT NULL DEFAULT 'none',  -- none | everyone | here | users | roles
   mention_user_ids TEXT    NOT NULL DEFAULT '[]',    -- JSON配列
   mention_role_ids TEXT    NOT NULL DEFAULT '[]',    -- JSON配列
 
@@ -271,3 +271,25 @@ function buildMention(r: Reminder): { prefix: string; allowed_mentions: AllowedM
 
 新機能が `CronJob` を実装して registry に登録すれば、**毎分の Cron は1本のまま**増やせる。
 Cloudflare 側の cron 定義を機能ごとに増やさないのが、この設計の一番の狙い。
+
+---
+
+## 9. 実装状況
+
+この設計はすべて実装済み。対応は次のとおり。
+
+| 設計 | 実装 |
+|---|---|
+| コマンド設計（§2） | `src/features/reminder/commands.ts` |
+| スキーマ（§3） | `migrations/0001_create_reminders.sql` / `src/features/reminder/schema.ts` |
+| 次回発火時刻の計算（§4） | `src/features/reminder/schedule.ts`（`test/schedule.test.ts` で検証） |
+| 配信ループ・リース（§5） | `src/features/reminder/cron.ts` / `repository.ts` の `claim()` |
+| メンション（§6） | `src/discord/mentions.ts`（`test/core.test.ts` で検証） |
+| 一覧表示（§7） | `src/features/reminder/service.ts` |
+
+設計からの差分は2点のみ。
+
+- **ORM を入れなかった**。テーブルが1つで、リースの楽観ロックに `meta.changes` を直接見たいため、
+  D1 の prepared statement を `repository.ts` で薄く包む形にした。
+- **`/remind edit` を追加した**。作成・参照・削除だけでは更新ができず CRUD が閉じないため。
+  スケジュールの差し替えは既存の `schedule_kind` の意味で解釈する（once なら日時、every なら頻度、cron なら式）。

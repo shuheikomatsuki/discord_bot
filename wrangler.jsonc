@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "discord-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  // リマインダーは実行時刻がユーザー入力で決まるため、Cloudflare 側の cron は
+  // 毎分1本だけ回し、その中で D1 をポーリングする（docs/REMINDER.md §5）
+  "triggers": { "crons": ["* * * * *"] },
+
+  // 公開情報。README の手順に従って自分の値を入れる
+  "vars": {
+    "DISCORD_APPLICATION_ID": "REPLACE_ME",
+    "DISCORD_PUBLIC_KEY": "REPLACE_ME",
+    "DISCORD_GUILD_ID": "REPLACE_ME",
+    "DEFAULT_TIMEZONE": "Asia/Tokyo"
+  },
+
+  // DISCORD_BOT_TOKEN は secret。`wrangler secret put DISCORD_BOT_TOKEN` で設定する
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "discord-bot",
+      "database_id": "REPLACE_ME"
+    }
+  ]
+}
