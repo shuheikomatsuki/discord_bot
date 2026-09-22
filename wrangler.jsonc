@@ -23,8 +23,7 @@
     {
       "binding": "DB",
       "database_name": "discord-bot",
-      // `npm run db:create` の出力をここに貼る
-      "database_id": "REPLACE_ME"
+      "database_id": "2d076bb2-a8f5-47ec-8e93-b252241946ab"
     }
   ]
 }
