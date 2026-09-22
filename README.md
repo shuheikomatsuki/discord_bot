@@ -41,59 +41,55 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 
 ---
 
-## セットアップ（あなたの作業）
+## セットアップ
+
+前提: [Cloudflare のアカウント](https://dash.cloudflare.com/sign-up)（無料。カード登録不要）と Node.js 22 以上。
+
+Application ID / Public Key / サーバーID は `wrangler.jsonc` と `.dev.vars.example` に
+記入済み。埋める必要があるのは **Bot Token** と **D1 の database_id** の2つだけ。
 
 ### 1. Discord 側
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) で **New Application**
-2. **Bot** タブ → *Reset Token* → トークンをコピー（これだけが秘密情報）
-3. **General Information** から **Application ID** と **Public Key** をコピー
-4. **OAuth2 → URL Generator**
+1. [Developer Portal](https://discord.com/developers/applications) → 対象アプリ → **Bot** タブ
+   → *Reset Token* でトークンを発行してコピー（一度しか表示されない）
+2. **OAuth2 → URL Generator**
    - scopes: `bot`, `applications.commands`
-   - bot permissions: `Send Messages`, `Embed Links`, **`Mention @everyone, @here, and All Roles`**
+   - bot permissions: `Send Messages`, `Embed Links`,
+     **`Mention @everyone, @here, and All Roles`**
      （最後のものが無いと `@everyone` とロールメンションが飛ばない）
-   - 生成された URL を開いて、自分のサーバーに招待する
-5. サーバーIDを取得：Discord の 設定 → 詳細設定 → **開発者モード** を ON →
-   サーバーを右クリック → *サーバーIDをコピー*
+   - 生成された URL を開いてサーバーに招待する
 
-### 2. ローカル
+### 2. 手元で実行する
 
 ```bash
-npm install
-cp .dev.vars.example .dev.vars   # 4つの値を埋める
+npm install                                  # 依存の取得（wrangler もここに入る）
+cp .dev.vars.example .dev.vars               # DISCORD_BOT_TOKEN の行だけ埋める
+
+npx wrangler login                           # ブラウザが開くので許可する
+npm run db:create                            # 出力された database_id を wrangler.jsonc に貼る
+npm run db:migrate                           # 本番 D1 にテーブルを作る
+npm run deploy                               # ★ ここで Worker の URL が表示される
+npx wrangler secret put DISCORD_BOT_TOKEN    # プロンプトにトークンを貼る
 ```
 
-`wrangler.jsonc` の `REPLACE_ME` を埋める（Bot Token 以外は秘密情報ではないのでコミットして問題ない）:
+`npm run deploy` の出力に出る URL（`https://discord-bot.<サブドメイン>.workers.dev`）を控える。
 
-```jsonc
-"vars": {
-  "DISCORD_APPLICATION_ID": "...",
-  "DISCORD_PUBLIC_KEY": "...",
-  "DISCORD_GUILD_ID": "...",
-  "DEFAULT_TIMEZONE": "Asia/Tokyo"
-}
+### 3. Discord に URL を教える
+
+Developer Portal → 対象アプリ → **General Information** →
+**Interactions Endpoint URL** に次を入力して *Save Changes*：
+
+```
+https://discord-bot.<サブドメイン>.workers.dev/interactions
 ```
 
-### 3. Cloudflare
+保存した瞬間に Discord が署名付きの PING を送ってくる。検証に失敗すると保存自体が
+弾かれるので、**保存できたら土台は正しく動いている**という確認になる。
+
+### 4. コマンドを登録する
 
 ```bash
-npx wrangler login
-npm run db:create                 # 出力された database_id を wrangler.jsonc に貼る
-npm run db:migrate:local          # ローカル D1 にスキーマを適用
-npm run db:migrate                # 本番 D1 にスキーマを適用
-npx wrangler secret put DISCORD_BOT_TOKEN   # Bot Token を登録
-npm run deploy                    # https://discord-bot.<subdomain>.workers.dev が払い出される
-```
-
-### 4. エンドポイント登録とコマンド登録
-
-1. Developer Portal → **General Information** → **Interactions Endpoint URL** に
-   `https://discord-bot.<subdomain>.workers.dev/interactions` を入力して保存
-   （Discord がその場で署名付き PING を送ってくる。ここが通れば土台は動いている）
-2. コマンドを登録する：
-
-```bash
-npm run register     # DISCORD_GUILD_ID のサーバーへ登録（即時反映）
+npm run register     # ギルドコマンドとして登録（即時反映）
 ```
 
 ### 5. 動作確認

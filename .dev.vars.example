@@ -1,12 +1,12 @@
-# Copy to `.dev.vars` for local development (`wrangler dev`).
-# In production set these with `wrangler secret put <NAME>` or as vars in wrangler.toml.
+# `cp .dev.vars.example .dev.vars` して DISCORD_BOT_TOKEN だけ埋める。
+# .dev.vars は .gitignore 済み。コミットされない。
+#
+# この3つは wrangler.jsonc にも入っている公開情報だが、
+# `npm run register` は wrangler.jsonc を読まないのでここにも必要。
+DISCORD_APPLICATION_ID=1334491224127569940
+DISCORD_PUBLIC_KEY=8189f9b158fe387b1a8ef07bc8553b4cbae2889524b8a30ff7867b67fc290eda
+DISCORD_GUILD_ID=1211154854207160440
+DEFAULT_TIMEZONE=Asia/Tokyo
 
-# Discord Developer Portal > Your App > General Information
-DISCORD_APPLICATION_ID=
-DISCORD_PUBLIC_KEY=
-
-# Discord Developer Portal > Your App > Bot > Token  (SECRET — never commit)
+# Discord Developer Portal > Bot > Reset Token（これだけが秘密情報）
 DISCORD_BOT_TOKEN=
-
-# Target guild for instant slash-command registration (right-click server > Copy Server ID)
-DISCORD_GUILD_ID=

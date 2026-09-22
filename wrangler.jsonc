@@ -9,11 +9,11 @@
   // 毎分1本だけ回し、その中で D1 をポーリングする（docs/REMINDER.md §5）
   "triggers": { "crons": ["* * * * *"] },
 
-  // 公開情報。README の手順に従って自分の値を入れる
+  // すべて公開情報（秘密なのは Bot Token だけ）なのでコミットしてよい
   "vars": {
-    "DISCORD_APPLICATION_ID": "REPLACE_ME",
-    "DISCORD_PUBLIC_KEY": "REPLACE_ME",
-    "DISCORD_GUILD_ID": "REPLACE_ME",
+    "DISCORD_APPLICATION_ID": "1334491224127569940",
+    "DISCORD_PUBLIC_KEY": "8189f9b158fe387b1a8ef07bc8553b4cbae2889524b8a30ff7867b67fc290eda",
+    "DISCORD_GUILD_ID": "1211154854207160440",
     "DEFAULT_TIMEZONE": "Asia/Tokyo"
   },
 
@@ -23,6 +23,7 @@
     {
       "binding": "DB",
       "database_name": "discord-bot",
+      // `npm run db:create` の出力をここに貼る
       "database_id": "REPLACE_ME"
     }
   ]
