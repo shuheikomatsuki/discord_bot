@@ -267,7 +267,6 @@ Discord の `custom_id` は **100文字上限**。ここに JSON を詰めると
 
 - 本番: `wrangler secret put DISCORD_BOT_TOKEN`
 - ローカル: `.dev.vars`（`.gitignore` 必須）
-- CI: GitHub Actions Secrets に `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
 
 **Public リポジトリなので、`.dev.vars` と `.env` の gitignore は最初にやること。** 万一トークンを push したら即 Discord Developer Portal で Reset Token。
 
@@ -303,35 +302,25 @@ npm run db:migrate         # 本番 D1 に適用
 ```
 
 D1 はどこまで適用したかを Cloudflare 側のテーブルで管理してくれるので、手動管理は不要。
-CI（`.github/workflows/deploy.yml`）でも deploy の前に `--remote` で流している。
+デプロイの前に `--remote` を流すのを忘れないこと（スキーマが無い状態でデプロイすると、
+cron が毎分エラーを吐き続ける）。
 
 ---
 
-## 10. CI/CD（GitHub Actions・無料）
+## 10. デプロイ
 
-`main` に push されたら自動デプロイ。ブランチは main のみ運用で問題ない。
+手元から `npm run deploy` する。個人利用では数秒で終わるので、自動デプロイを挟む価値が薄い。
 
-```yaml
-# .github/workflows/deploy.yml
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm run typecheck && npm run test
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # マイグレーションも一緒に流す場合は command を分ける
+```bash
+npm run typecheck && npm test && npm run deploy
 ```
 
-コマンド定義を変えたときだけ `npm run register` を手で叩く（毎デプロイで叩く必要はない。叩いてもレート制限に注意）。
+GitHub Actions による自動デプロイは一度入れたが外した。`CLOUDFLARE_API_TOKEN` を
+Secrets に置く必要があり、一人で手元からデプロイする運用ではその管理コストに見合わない。
+必要になったら `cloudflare/wrangler-action@v3` を使えば復活させられる。
+
+コマンド登録だけは `.github/workflows/register-commands.yml` に残してある
+（`workflow_dispatch` の手動実行のみ。自動では走らないので CI が赤くなることはない）。
 
 ---
 
@@ -346,7 +335,7 @@ jobs:
 7. `/remind every` / `/remind cron`（繰り返し・回数制限）を追加
 8. メンション指定（ユーザー / ロール / @everyone）と `allowed_mentions` を追加
 9. `/remind delete` の autocomplete、`pause` / `resume` ボタンを追加
-10. CI を入れる
+10. 手元から `npm run deploy` して動作確認する
 
 ---
 
