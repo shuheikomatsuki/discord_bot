@@ -90,6 +90,29 @@ export function putGuildCommands(
   });
 }
 
+export async function getGuildCommands(
+  token: string,
+  applicationId: string,
+  guildId: string,
+): Promise<{ id: string; name: string; description?: string }[]> {
+  const response = await request(
+    'GET',
+    `/applications/${applicationId}/guilds/${guildId}/commands`,
+    {
+      token,
+    },
+  );
+  return response.json();
+}
+
+export async function getGlobalCommands(
+  token: string,
+  applicationId: string,
+): Promise<{ id: string; name: string; description?: string }[]> {
+  const response = await request('GET', `/applications/${applicationId}/commands`, { token });
+  return response.json();
+}
+
 export function putGlobalCommands(
   token: string,
   applicationId: string,

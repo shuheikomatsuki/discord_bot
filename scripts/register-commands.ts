@@ -2,13 +2,20 @@
  * スラッシュコマンドを Discord に登録する。デプロイとは別作業で、
  * コマンド定義（名前・説明・オプション）を変えたときだけ実行すればよい。
  *
- *   npm run register             # DISCORD_GUILD_ID のサーバーへ登録（即時反映）
- *   npm run register -- --global # 全サーバーへ登録（反映に最大1時間）
- *   npm run register -- --clear  # 登録をすべて削除
+ *   npm run register                      # DISCORD_GUILD_ID のサーバーへ登録（即時反映）
+ *   npm run register -- --list            # 現在の登録内容を確認する
+ *   npm run register -- --clear           # このサーバーの登録をすべて削除
+ *   npm run register -- --global          # 全サーバーへ登録（反映に最大1時間）
+ *   npm run register -- --global --clear  # グローバル登録をすべて削除
  */
 import { readFileSync } from 'node:fs';
 import { commandDefinitions } from '../src/core/registry';
-import { putGlobalCommands, putGuildCommands } from '../src/discord/rest';
+import {
+  getGlobalCommands,
+  getGuildCommands,
+  putGlobalCommands,
+  putGuildCommands,
+} from '../src/discord/rest';
 
 function loadDevVars(path = '.dev.vars'): Record<string, string> {
   try {
@@ -41,15 +48,39 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const clear = args.includes('--clear');
   const global = args.includes('--global');
+  const listOnly = args.includes('--list');
 
   const vars = loadDevVars();
   const token = requireVar(vars, 'DISCORD_BOT_TOKEN');
   const applicationId = requireVar(vars, 'DISCORD_APPLICATION_ID');
+
+  if (listOnly) {
+    const guildId = requireVar(vars, 'DISCORD_GUILD_ID');
+    const [globalCommands, guildCommands] = await Promise.all([
+      getGlobalCommands(token, applicationId),
+      getGuildCommands(token, applicationId, guildId),
+    ]);
+    const print = (label: string, commands: { name: string; description?: string }[]): void => {
+      console.log(`\n${label} (${commands.length}件)`);
+      if (commands.length === 0) console.log('  （なし）');
+      for (const command of commands) {
+        console.log(`  /${command.name}  ${command.description ?? ''}`);
+      }
+    };
+    print('グローバルコマンド', globalCommands);
+    print(`ギルドコマンド (${guildId})`, guildCommands);
+    return;
+  }
+
   const body = clear ? [] : commandDefinitions;
 
   if (global) {
     await putGlobalCommands(token, applicationId, body);
-    console.log(`グローバルに ${body.length} 件登録しました（反映に最大1時間かかります）`);
+    console.log(
+      clear
+        ? 'グローバルコマンドをすべて削除しました'
+        : `グローバルに ${body.length} 件登録しました（反映に最大1時間かかります）`,
+    );
   } else {
     const guildId = requireVar(vars, 'DISCORD_GUILD_ID');
     await putGuildCommands(token, applicationId, guildId, body);

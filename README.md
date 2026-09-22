@@ -92,6 +92,14 @@ https://discord-bot.<サブドメイン>.workers.dev/interactions
 npm run register     # ギルドコマンドとして登録（即時反映）
 ```
 
+同じアプリケーションを以前にも使っていて古いコマンドが残っている場合は、
+現状を確認してから消す。
+
+```bash
+npm run register -- --list             # グローバル / ギルドの登録状況を表示
+npm run register -- --global --clear   # 古いグローバルコマンドを削除
+```
+
 ### 5. 動作確認
 
 ```
