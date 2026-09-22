@@ -47,7 +47,13 @@ Discord Bot の実装方式は2つある。Cloudflare Workers で動かす場合
 | Lint/Format | Biome（または ESLint + Prettier） | Biome は1つで済んで速い |
 
 ### 補足：`discord-hono` という選択肢
-Hono ベースで Discord Interactions を扱うライブラリが存在する。楽だが、学習目的・依存を薄く保つ目的なら **Hono + 自前の薄いルーティング層**を推奨（本書はこちら前提）。
+Hono ベースで Discord Interactions を扱うラッパーが存在する。ただし本件では **Hono + 自前の薄いルーティング層**を推奨する。理由は実利的なもので、
+
+- 必要な抽象化が小さい（署名検証 + type による分岐 + defer ヘルパで概ね150行程度）
+- Discord API の仕様変更に追従できなくなったとき、ラッパーが止まると全体が止まる
+- `discord-api-types` で型は十分得られるので、ラッパーが提供する型の旨味が薄い
+
+依存を1つ減らして自分で握っておくほうが、長期の保守コストは低い。
 
 ---
 
@@ -98,100 +104,158 @@ Discord ──POST──▶ https://<worker>.workers.dev/interactions
 
 ### 4.2 Cron（定期投稿・リマインダー）
 
+Cron Triggers は**個別のスケジュールを cron 式で登録するのではなく、毎分1本だけ回してD1をポーリングする**。
+リマインダーは実行時刻がユーザー入力で決まるため、Cloudflare 側の cron 定義を動的に増やすことはできない（できても上限がある）。
+
 ```
-Cloudflare Cron Trigger（例: 毎日 9:00 JST = "0 0 * * *" UTC）
+wrangler.toml: crons = ["* * * * *"]   ← 毎分1本だけ
         │
         ▼
-scheduled() ハンドラ
-  ├─ D1 から対象レコードを取得
-  └─ POST /channels/{channel_id}/messages （Authorization: Bot <TOKEN>）
+scheduled() ハンドラ（1日1,440回 / 無料枠 10万に対して十分）
+  ├─ registry から全 feature の CronJob を集めて実行
+  └─ reminder の CronJob:
+       SELECT * FROM reminders WHERE status='active' AND next_fire_at <= now LIMIT 50
+       各行について
+         ├─ 楽観ロックで「取得」（後述の二重送信対策）
+         ├─ POST /channels/{channel_id}/messages
+         └─ next_fire_at を進める / 回数を減らす / 完了なら status='completed'
 ```
+
+詳細は `docs/REMINDER.md` を参照。
 
 ### 4.3 コマンド登録（デプロイとは別作業）
 
-スラッシュコマンドの定義は**実行時ではなく事前に** Discord へ登録する。
-
-```
-npm run register
-  └─ PUT /applications/{APP_ID}/commands           ← グローバル（反映に最大1時間）
-     または
-     PUT /applications/{APP_ID}/guilds/{GUILD_ID}/commands  ← ギルド限定（即時反映）
-```
-
-個人サーバー用途なので **ギルドコマンド推奨**（即時反映されて開発が速い）。
+スラッシュコマンドの定義は**実行時ではなく事前に** Discord へ登録する。`npm run register` で `PUT` するだけ。
+詳細は「§5 グローバルコマンド vs ギルドコマンド」を参照。
 
 ---
 
-## 5. ディレクトリ構成
+## 5. グローバルコマンド vs ギルドコマンド
 
-```
-discord_bot/
-├── src/
-│   ├── index.ts                  # エントリ。Hono app + scheduled() を export
-│   ├── app.ts                    # Hono のルート定義
-│   ├── middleware/
-│   │   └── verifyDiscordRequest.ts   # Ed25519 署名検証ミドルウェア
-│   ├── interactions/
-│   │   ├── router.ts             # interaction type / custom_id で分岐
-│   │   └── respond.ts            # reply() / defer() / followUp() のヘルパ
-│   ├── commands/
-│   │   ├── index.ts              # ★ コマンドレジストリ（唯一の真実の源）
-│   │   ├── ping.ts
-│   │   ├── memo.ts               # D1 を使う例
-│   │   └── types.ts              # Command 型定義
-│   ├── components/               # ボタン/モーダルのハンドラ（custom_id ベース）
-│   ├── discord/
-│   │   ├── rest.ts               # Bot Token を使う REST クライアント
-│   │   └── types.ts              # discord-api-types から再export
-│   ├── db/
-│   │   ├── schema.ts             # Drizzle スキーマ
-│   │   └── client.ts             # drizzle(env.DB)
-│   ├── cron/
-│   │   └── handlers.ts           # scheduled() の中身
-│   └── env.d.ts                  # Env（バインディング + secrets）の型
-├── scripts/
-│   └── register-commands.ts      # コマンド登録スクリプト
-├── migrations/                   # wrangler d1 migrations が生成
-│   └── 0000_init.sql
-├── test/
-│   └── interactions.test.ts
-├── wrangler.toml                 # (or wrangler.jsonc)
-├── .dev.vars                     # ローカル用シークレット（.gitignore する）
-├── .dev.vars.example
-├── package.json
-├── tsconfig.json
-├── biome.json
-└── docs/ARCHITECTURE.md
+スラッシュコマンドの登録先は2種類ある。**dev/prod の分離とは無関係**の、純粋な「どこで使えるか」の話。
+
+| | グローバル | ギルド |
+|---|---|---|
+| エンドポイント | `PUT /applications/{app_id}/commands` | `PUT /applications/{app_id}/guilds/{guild_id}/commands` |
+| 使える場所 | Bot が参加している**全サーバー** + DM（許可すれば） | **指定した1サーバーのみ**（DM不可） |
+| 反映タイミング | Discord 側にキャッシュされ、**最大1時間**かかることがある | **即時**（登録した瞬間に出る） |
+| 上限 | 100個 | 1ギルドにつき100個（グローバル枠とは別勘定） |
+| 権限設定 | サーバー管理者が各サーバーで上書き可能 | 同上 |
+
+**両方に同名のコマンドを登録すると、ギルド側が優先されて2重に見えることは無い**（ギルドが勝つ）。ただし混乱の元なので、どちらか一方に統一する。
+
+### 本件の結論：ギルドコマンド一本
+
+- 使うサーバーは1つだけ（大学の友人3人のサーバー）
+- 反映が即時なので「コマンドの説明文を直したのに1時間出てこない」というストレスが無い
+- グローバルにする理由（=他人が自分のサーバーに bot を招待する）が無い
+
+`.dev.vars` / Workers vars の `DISCORD_GUILD_ID` に対象サーバーIDを入れ、登録スクリプトはそこへ `PUT` する。
+
+> 将来 bot を他のサーバーにも入れたくなったら、`register` スクリプトの登録先をグローバルに切り替えるだけ（コマンド定義は同じものを使い回せる）。その際は**古いギルドコマンドを空配列で `PUT` して消す**のを忘れずに。
+
+```bash
+npm run register            # DISCORD_GUILD_ID へ登録
+npm run register -- --clear # 全削除（空配列を PUT）
 ```
 
-### 設計上のキモ：コマンドレジストリの一元化
+## 6. ディレクトリ構成（機能単位の縦割り）
 
-`src/commands/index.ts` で **「Discord への登録定義」と「実行時ハンドラ」を同じオブジェクトに持たせる**。
+機能が増えることを前提に、**レイヤ横割りではなく機能ごとの縦割り（feature slice）**にする。
+「リマインダーを直すときに触るファイルは `src/features/reminder/` 配下だけ」という状態を保つ。
+
+```
+src/
+├── index.ts                    # エントリ。fetch() と scheduled() を export
+├── env.d.ts                    # Env（D1 binding / vars / secrets）の型
+│
+├── core/                       # 機能に依存しない土台。ここは滅多に変わらない
+│   ├── http.ts                 # Hono app の組み立て
+│   ├── verify.ts               # Ed25519 署名検証ミドルウェア
+│   ├── router.ts               # interaction を type と名前で dispatch
+│   ├── respond.ts              # reply / defer / followUp / autocomplete ヘルパ
+│   ├── customId.ts             # ボタン等の custom_id エンコード・デコード
+│   ├── registry.ts             # ★ 全 feature を集約する唯一の場所
+│   └── types.ts                # Feature / Command / CronJob のインターフェース
+│
+├── discord/
+│   ├── rest.ts                 # Bot Token を使う REST クライアント（薄く）
+│   └── mentions.ts             # メンション文字列と allowed_mentions の生成
+│
+├── db/
+│   ├── client.ts               # drizzle(env.DB)
+│   └── schema.ts               # 各 feature の schema を re-export するだけ
+│
+└── features/
+    ├── reminder/
+    │   ├── index.ts            # Feature オブジェクトを default export
+    │   ├── commands.ts         # /remind の定義 + ハンドラ
+    │   ├── autocomplete.ts     # /remind delete のID補完
+    │   ├── cron.ts             # 毎分の配信処理
+    │   ├── service.ts          # ドメインロジック（次回発火時刻の計算など）
+    │   ├── repository.ts       # D1 アクセス
+    │   ├── schedule.ts         # interval / cron 式のパースと次回計算
+    │   └── schema.ts           # Drizzle テーブル定義
+    └── ping/
+        └── index.ts            # 最小のお手本として残しておく
+
+scripts/register-commands.ts    # registry から定義を集めて PUT するだけ
+migrations/                     # wrangler d1 migrations が生成
+test/
+```
+
+### 拡張の契約：`Feature` インターフェース
+
+新機能を足す作業を「**ディレクトリを1つ作って registry に1行足す**」だけにする。
 
 ```ts
-// src/commands/types.ts
-import type { APIApplicationCommandInteraction } from 'discord-api-types/v10';
-
-export type CommandContext = {
-  interaction: APIApplicationCommandInteraction;
-  env: Env;
-  ctx: ExecutionContext;
+// src/core/types.ts
+export type Feature = {
+  name: string;
+  /** Discord に登録するコマンド定義と、その実行ハンドラ */
+  commands?: Command[];
+  /** ボタン/セレクト/モーダルのハンドラ。custom_id の namespace で引く */
+  components?: Record<string, ComponentHandler>;
+  /** 毎分の cron から呼ばれる。自分の担当分だけ処理する */
+  cron?: CronJob[];
 };
 
 export type Command = {
-  /** Discord に PUT する定義（そのままJSONで送れる形） */
-  definition: RESTPostAPIApplicationCommandsJSONBody;
-  /** 3秒以内に返せないなら true にして defer させる */
-  deferred?: boolean;
-  handler: (c: CommandContext) => Promise<APIInteractionResponse | void>;
+  definition: RESTPostAPIApplicationCommandsJSONBody; // そのまま PUT できる形
+  deferred?: boolean;            // true なら router が自動で type:5 を返す
+  handler: (c: CommandContext) => Promise<void | APIInteractionResponse>;
+  autocomplete?: (c: AutocompleteContext) => Promise<APICommandAutocompleteResponse>;
 };
 ```
 
-これで「コマンド追加 → 登録スクリプトの修正を忘れて動かない」という典型的な事故が起きない。
+```ts
+// src/core/registry.ts  ← 新機能追加時に触るのはここだけ
+import reminder from '../features/reminder';
+import ping from '../features/ping';
 
----
+export const features: Feature[] = [ping, reminder];
+```
 
-## 6. 環境変数 / シークレット
+`registry.ts` が
+- ルーティング表（コマンド名 → ハンドラ）
+- 登録スクリプトが `PUT` する定義の配列
+- cron が回すジョブ一覧
+
+の**すべての供給源**になる。定義とハンドラが1箇所にあるので、「コマンドを足したのに登録し忘れて動かない」が構造的に起きない。
+
+### `custom_id` の規約
+
+Discord の `custom_id` は **100文字上限**。ここに JSON を詰めると破綻するので、最初から規約を決めておく。
+
+```
+<version>:<feature>:<action>:<arg1>:<arg2>
+例) v1:reminder:pause:01JBX7K2ZQ
+```
+
+ルータは `:` の2番目で feature を引き当てて委譲する。データが100文字に収まらないものは
+**custom_id にはIDだけ入れて、実体は D1 から引き直す**（この方針を崩さない）。
+
+## 7. 環境変数 / シークレット
 
 | 名前 | 種類 | 用途 |
 |---|---|---|
@@ -209,7 +273,7 @@ export type Command = {
 
 ---
 
-## 7. ローカル開発フロー
+## 8. ローカル開発フロー
 
 Discord は Interactions Endpoint に**公開HTTPS URL**を要求するので、ローカル開発には以下のどちらか。
 
@@ -228,7 +292,7 @@ cloudflared tunnel --url http://localhost:8787   # 無料・アカウント不�
 
 ---
 
-## 8. マイグレーション運用
+## 9. マイグレーション運用
 
 ```bash
 # スキーマ変更（Drizzle 使用時）
@@ -241,7 +305,7 @@ D1 はマイグレーション履歴テーブルを Cloudflare 側で管理し�
 
 ---
 
-## 9. CI/CD（GitHub Actions・無料）
+## 10. CI/CD（GitHub Actions・無料）
 
 `main` に push されたら自動デプロイ。ブランチは main のみ運用で問題ない。
 
@@ -269,19 +333,22 @@ jobs:
 
 ---
 
-## 10. 段階的な実装順序（推奨）
+## 11. 段階的な実装順序（推奨）
 
 1. `wrangler.toml` + Hono + `/interactions` で **PING/PONG だけ**返す。Discord Developer Portal にエンドポイント登録が通ることを確認（ここが最初の関門）
-2. `/ping` コマンドを登録スクリプトで登録し、即時応答（type 4）で動作確認
-3. defer（type 5 + `waitUntil` + PATCH）のパターンを1つ実装してテンプレ化
-4. D1 を作成・バインドし、`/memo add` `/memo list` のような CRUD を1機能作る
-5. ボタン or モーダルを1つ入れて Components の流れを確認
-6. Cron Trigger で定期投稿を1つ
-7. CI を入れる
+2. `core/` の骨組み（registry / router / respond / Feature 型）と `ping` feature を作り、ギルドコマンド登録 → 即時応答（type 4）まで確認
+3. defer（type 5 + `waitUntil` + PATCH）のパターンをヘルパ化
+4. D1 を作成・バインドし、`reminders` テーブルのマイグレーションを適用
+5. `/remind once` と `/remind list` を実装（1回限りのリマインダーが飛べば、土台は全部動いている証明になる）
+6. 毎分 Cron を有効化し、配信ループと二重送信対策を入れる
+7. `/remind every` / `/remind cron`（繰り返し・回数制限）を追加
+8. メンション指定（ユーザー / ロール / @everyone）と `allowed_mentions` を追加
+9. `/remind delete` の autocomplete、`pause` / `resume` ボタンを追加
+10. CI を入れる
 
 ---
 
-## 11. 将来の逃げ道
+## 12. 将来の逃げ道
 
 | 要件が出たら | 対応 |
 |---|---|
