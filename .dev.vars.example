@@ -1,0 +1,12 @@
+# Copy to `.dev.vars` for local development (`wrangler dev`).
+# In production set these with `wrangler secret put <NAME>` or as vars in wrangler.toml.
+
+# Discord Developer Portal > Your App > General Information
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=
+
+# Discord Developer Portal > Your App > Bot > Token  (SECRET — never commit)
+DISCORD_BOT_TOKEN=
+
+# Target guild for instant slash-command registration (right-click server > Copy Server ID)
+DISCORD_GUILD_ID=

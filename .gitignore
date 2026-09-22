@@ -1,10 +1,30 @@
+# dependencies
 node_modules/
+
+# build output
 dist/
+build/
+*.tsbuildinfo
+
+# Cloudflare Wrangler / Miniflare
 .wrangler/
+.mf/
+
+# secrets (public repo: absolutely never commit these)
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
 .env
 .env.*
+!.env.example
+
+# test / coverage
+coverage/
+
+# logs
 *.log
+npm-debug.log*
+
+# editor / OS
 .DS_Store
+.idea/
