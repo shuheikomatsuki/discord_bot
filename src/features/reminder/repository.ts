@@ -56,11 +56,13 @@ export async function findByIdish(
   idish: string,
 ): Promise<Reminder | null> {
   const needle = idish.trim().toUpperCase();
-  if (needle === '') return null;
+  // ID は ULID（Crockford Base32 の 26 文字）なので、それ以外の入力は検索するまでもなく該当なし。
+  // 自由入力をそのまま LIKE に渡すと D1 のパターン長制限（50 バイト）で SQL エラーになる。
+  if (!/^[0-9A-Z]{1,26}$/.test(needle)) return null;
   const row = await db
     .prepare(
       `SELECT ${COLUMNS} FROM reminders
-       WHERE guild_id = ?1 AND (id = ?2 OR id LIKE '%' || ?2)
+       WHERE guild_id = ?1 AND (id = ?2 OR substr(id, -length(?2)) = ?2)
        ORDER BY created_at DESC LIMIT 1`,
     )
     .bind(guildId, needle)

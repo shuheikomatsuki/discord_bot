@@ -273,7 +273,10 @@ async function requireReminder(c: CommandContext, guildId: string): Promise<Remi
   const { options } = resolveOptions(c.interaction.data.options);
   const idish = getString(options, 'id') ?? '';
   const reminder = await repo.findByIdish(c.env.DB, guildId, idish);
-  if (!reminder) throw new UserError(`リマインダーが見つかりません: \`${idish}\``);
+  if (!reminder)
+    throw new UserError(
+      `リマインダーが見つかりません: \`${idish.slice(0, 100)}\`\n\`id\` 欄は入力中に出る候補から選んでください（\`/remind list\` の ID 末尾6文字でも可）。`,
+    );
   return reminder;
 }
 
