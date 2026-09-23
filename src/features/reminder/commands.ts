@@ -525,7 +525,10 @@ async function handler(c: CommandContext): Promise<APIInteractionResponseCallbac
       return ephemeralText(`⚠️ ${error.message}`);
     }
     console.error('/remind failed', c.sub, error);
-    return ephemeralText('予期しないエラーが発生しました。ログを確認してください。');
+    // 身内用の bot なので、原因をその場で確認できるよう中身をそのまま返す（本人にしか見えない）
+    return ephemeralText(
+      `予期しないエラーが発生しました (/remind ${c.sub ?? ''}):\n\`\`\`\n${(error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 1500)}\n\`\`\``,
+    );
   }
 }
 
