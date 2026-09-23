@@ -49,16 +49,26 @@ export async function insert(db: D1Database, r: NewReminder): Promise<void> {
     .run();
 }
 
+/**
+ * id 欄の入力から検索用の ID（全体または末尾）を取り出す。
+ * 候補を選んでも Discord クライアントが value ではなく表示名
+ * （`145FT1 | 30分ごと | 本文…`）を送ってくることがあるので、先頭の語だけを使う。
+ * ID は ULID（Crockford Base32 の 26 文字）なので、その形でなければ null。
+ */
+export function normalizeIdish(idish: string): string | null {
+  const head = idish.trim().split(/[\s|]/, 1)[0]?.toUpperCase() ?? '';
+  return /^[0-9A-Z]{1,26}$/.test(head) ? head : null;
+}
+
 /** 完全な ID でも末尾数文字でも引けるようにする（ユーザーに26文字を手打ちさせないため） */
 export async function findByIdish(
   db: D1Database,
   guildId: string,
   idish: string,
 ): Promise<Reminder | null> {
-  const needle = idish.trim().toUpperCase();
-  // ID は ULID（Crockford Base32 の 26 文字）なので、それ以外の入力は検索するまでもなく該当なし。
-  // 自由入力をそのまま LIKE に渡すと D1 のパターン長制限（50 バイト）で SQL エラーになる。
-  if (!/^[0-9A-Z]{1,26}$/.test(needle)) return null;
+  // 自由入力をそのまま LIKE に渡すと D1 のパターン長制限（50 バイト）で SQL エラーになるので必ず正規化する
+  const needle = normalizeIdish(idish);
+  if (!needle) return null;
   const row = await db
     .prepare(
       `SELECT ${COLUMNS} FROM reminders
