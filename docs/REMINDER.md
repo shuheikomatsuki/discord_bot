@@ -20,9 +20,9 @@
 機能が増えても Discord のコマンド一覧が散らからない。
 
 ```
-/remind once    at:<日時>        message:<本文> [mention] [everyone] [channel]
-/remind every   interval:<頻度>  message:<本文> [count] [start] [mention] [everyone] [channel]
-/remind cron    expr:<cron式>    message:<本文> [count] [mention] [everyone] [channel]
+/remind once    at:<日時>        message:<本文> [mention〜mention5] [everyone] [channel]
+/remind every   interval:<頻度>  message:<本文> [count] [start] [mention〜mention5] [everyone] [channel]
+/remind cron    expr:<cron式>    message:<本文> [count] [mention〜mention5] [everyone] [channel]
 /remind list    [all]
 /remind show    id:<ID>
 /remind pause   id:<ID>
@@ -40,14 +40,14 @@
 | `expr` | STRING (3) | ✅ (cron) | 標準5フィールド cron。`0 9 * * 1` = 毎週月曜9時（**JST解釈**） |
 | `count` | INTEGER (4) | | 繰り返し回数。1〜1000。**未指定なら無限** |
 | `start` | STRING (3) | | 繰り返しの開始時刻。未指定なら「今から1周期後」 |
-| `mention` | MENTIONABLE (9) | | ユーザーとロールの**どちらも**受け取れる。これ1つで両対応できる |
+| `mention` 〜 `mention5` | MENTIONABLE (9) | | ユーザーとロールの**どちらも**受け取れる。複数人は `mention2`〜`mention5` で追加（混在可） |
 | `everyone` | BOOLEAN (5) | | true なら `@everyone` |
 | `channel` | CHANNEL (7) | | 投稿先。未指定なら**コマンドを打ったチャンネル** |
 
 > `mention` を MENTIONABLE 型にしているのが要点。USER と ROLE で別オプションに分けると
 > 「どちらか片方だけ指定してね」という検証が必要になるが、MENTIONABLE なら Discord 側の
-> ピッカーが1つで済む。複数人メンションしたくなったら、後述のスキーマが配列を持てるので
-> オプションを `mention2` `mention3` と足すか、モーダルに切り替えれば拡張できる。
+> ピッカーが1つで済む。MENTIONABLE は1つにつき1人なので、複数人メンションは `mention2`〜`mention5` を
+> 並べて実現している（スキーマは配列を持つ。`edit` でどれか1つでも指定するとメンション全体を差し替える）。
 
 ### レスポンスの流儀
 

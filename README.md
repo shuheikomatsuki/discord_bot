@@ -13,12 +13,12 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 ## コマンド
 
 ```
-/remind once   at:<日時>       message:<本文> [mention] [everyone] [channel]
-/remind every  interval:<頻度> message:<本文> [count] [start] [mention] [everyone] [channel]
-/remind cron   expr:<cron式>   message:<本文> [count] [mention] [everyone] [channel]
+/remind once   at:<日時>       message:<本文> [mention〜mention5] [everyone] [channel]
+/remind every  interval:<頻度> message:<本文> [count] [start] [mention〜mention5] [everyone] [channel]
+/remind cron   expr:<cron式>   message:<本文> [count] [mention〜mention5] [everyone] [channel]
 /remind list   [mine] [all]
 /remind show   id:<ID>
-/remind edit   id:<ID> [message] [when] [count] [mention] [everyone] [mention_clear] [channel]
+/remind edit   id:<ID> [message] [when] [count] [mention〜mention5] [everyone] [mention_clear] [channel]
 /remind pause  id:<ID>
 /remind resume id:<ID>
 /remind delete id:<ID>
@@ -98,7 +98,7 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 | `at` / `start` / `when`(once) | `09:00` `10/01 09:00` `2026-10-01 09:00` `30m` `2h` | `09:00` は「次に来る9時」。年を省いて過去になる日付は翌年扱い |
 | `interval` | `10m` `1h` `1d` `1w` `1h30m` | 単位なしの数値は分。最短1分、最長1年 |
 | `count` | `3` | 未指定なら無限。`edit` で `0` を指定すると無限に戻る |
-| `mention` | ユーザーまたはロールを選択 | ピッカーから選ぶ |
+| `mention` 〜 `mention5` | ユーザーまたはロールを選択 | ピッカーから選ぶ。複数人なら `mention2` 以降も使う（ユーザーとロールの混在可、最大5つ） |
 | `everyone` | `true` | `mention` より優先される |
 | `channel` | チャンネルを選択 | 未指定ならコマンドを打ったチャンネル |
 

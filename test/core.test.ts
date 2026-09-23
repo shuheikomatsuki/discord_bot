@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCustomId, parseCustomId } from '../src/core/customId';
 import { formatZoned, fromZonedParts, toZonedParts } from '../src/core/time';
-import { buildMention } from '../src/discord/mentions';
+import { buildMention, describeMention } from '../src/discord/mentions';
 
 describe('customId', () => {
   it('往復できる', () => {
@@ -50,6 +50,13 @@ describe('buildMention', () => {
     const built = buildMention({ type: 'roles', userIds: [], roleIds: ['9'] });
     expect(built.prefix).toBe('<@&9> ');
     expect(built.allowedMentions).toEqual({ parse: [], roles: ['9'] });
+  });
+
+  it('ユーザーとロールを混在させて複数人メンションできる', () => {
+    const built = buildMention({ type: 'users', userIds: ['1', '2'], roleIds: ['9'] });
+    expect(built.prefix).toBe('<@1> <@2> <@&9> ');
+    expect(built.allowedMentions).toEqual({ parse: [], users: ['1', '2'], roles: ['9'] });
+    expect(describeMention({ type: 'users', userIds: ['1'], roleIds: ['9'] })).toBe('<@1> <@&9>');
   });
 });
 

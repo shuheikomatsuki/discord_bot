@@ -52,11 +52,17 @@ const messageOption: APIApplicationCommandOption = {
   max_length: MAX_MESSAGE_LENGTH,
 };
 
-const mentionOption: APIApplicationCommandOption = {
+/** 複数人メンション用に mention, mention2 … mention5 を並べる（MENTIONABLE は1つ1人なので） */
+const MENTION_OPTION_NAMES = ['mention', 'mention2', 'mention3', 'mention4', 'mention5'] as const;
+
+const mentionOptions: APIApplicationCommandOption[] = MENTION_OPTION_NAMES.map((name, i) => ({
   type: ApplicationCommandOptionType.Mentionable,
-  name: 'mention',
-  description: 'メンションするユーザーまたはロール',
-};
+  name,
+  description:
+    i === 0
+      ? 'メンションするユーザーまたはロール（mention2〜5 で追加できる）'
+      : '追加でメンションするユーザーまたはロール',
+}));
 
 const everyoneOption: APIApplicationCommandOption = {
   type: ApplicationCommandOptionType.Boolean,
@@ -105,7 +111,7 @@ const definition = {
           required: true,
         },
         messageOption,
-        mentionOption,
+        ...mentionOptions,
         everyoneOption,
         channelOption,
       ],
@@ -129,7 +135,7 @@ const definition = {
           name: 'start',
           description: '初回の日時（未指定なら「今から1周期後」）',
         },
-        mentionOption,
+        ...mentionOptions,
         everyoneOption,
         channelOption,
       ],
@@ -147,7 +153,7 @@ const definition = {
         },
         messageOption,
         countOption,
-        mentionOption,
+        ...mentionOptions,
         everyoneOption,
         channelOption,
       ],
@@ -188,7 +194,7 @@ const definition = {
           description: 'スケジュールを差し替える（once=日時 / every=頻度 / cron=cron式）',
         },
         { ...countOption, description: '繰り返し回数を差し替える（0 で無限）', min_value: 0 },
-        mentionOption,
+        ...mentionOptions,
         everyoneOption,
         {
           type: ApplicationCommandOptionType.Boolean,
@@ -256,13 +262,19 @@ function readMention(
   if (everyone) {
     return { mentionType: 'everyone', mentionUserIds: [], mentionRoleIds: [] };
   }
-  const mentionable = getMentionable(interaction, options, 'mention');
-  if (mentionable) {
-    return mentionable.kind === 'role'
-      ? { mentionType: 'roles', mentionUserIds: [], mentionRoleIds: [mentionable.id] }
-      : { mentionType: 'users', mentionUserIds: [mentionable.id], mentionRoleIds: [] };
+  const userIds = new Set<string>();
+  const roleIds = new Set<string>();
+  for (const name of MENTION_OPTION_NAMES) {
+    const mentionable = getMentionable(interaction, options, name);
+    if (!mentionable) continue;
+    (mentionable.kind === 'role' ? roleIds : userIds).add(mentionable.id);
   }
-  return undefined;
+  if (userIds.size === 0 && roleIds.size === 0) return undefined;
+  return {
+    mentionType: userIds.size > 0 ? 'users' : 'roles',
+    mentionUserIds: [...userIds],
+    mentionRoleIds: [...roleIds],
+  };
 }
 
 function timeZoneOf(env: { DEFAULT_TIMEZONE: string }): string {

@@ -1,5 +1,6 @@
 import { AllowedMentionsTypes, type APIAllowedMentions } from 'discord-api-types/v10';
 
+/** users / roles は歴史的な区別で、どちらでも userIds と roleIds の両方をメンションする（混在可） */
 export type MentionType = 'none' | 'everyone' | 'here' | 'users' | 'roles';
 
 export interface MentionSpec {
@@ -26,15 +27,18 @@ export function buildMention(spec: MentionSpec): BuiltMention {
     case 'here':
       return { prefix: '@here ', allowedMentions: { parse: [AllowedMentionsTypes.Everyone] } };
     case 'users':
+    case 'roles': {
+      const tags = mentionTags(spec);
+      if (tags === '') return { prefix: '', allowedMentions: { parse: [] } };
       return {
-        prefix: `${spec.userIds.map((id) => `<@${id}>`).join(' ')} `,
-        allowedMentions: { parse: [], users: spec.userIds },
+        prefix: `${tags} `,
+        allowedMentions: {
+          parse: [],
+          ...(spec.userIds.length > 0 && { users: spec.userIds }),
+          ...(spec.roleIds.length > 0 && { roles: spec.roleIds }),
+        },
       };
-    case 'roles':
-      return {
-        prefix: `${spec.roleIds.map((id) => `<@&${id}>`).join(' ')} `,
-        allowedMentions: { parse: [], roles: spec.roleIds },
-      };
+    }
     case 'none':
       return { prefix: '', allowedMentions: { parse: [] } };
   }
@@ -48,10 +52,15 @@ export function describeMention(spec: MentionSpec): string {
     case 'here':
       return '@here';
     case 'users':
-      return spec.userIds.map((id) => `<@${id}>`).join(' ');
     case 'roles':
-      return spec.roleIds.map((id) => `<@&${id}>`).join(' ');
+      return mentionTags(spec) || 'なし';
     case 'none':
       return 'なし';
   }
+}
+
+function mentionTags(spec: MentionSpec): string {
+  return [...spec.userIds.map((id) => `<@${id}>`), ...spec.roleIds.map((id) => `<@&${id}>`)].join(
+    ' ',
+  );
 }
