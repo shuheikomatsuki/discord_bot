@@ -196,6 +196,7 @@ src/
     │   ├── repository.ts       # D1 アクセス（CRUD + 配信用クエリ）
     │   ├── schedule.ts         # 日時・頻度・cron の解釈と次回発火時刻の計算
     │   └── schema.ts           # 行の型と D1 行 -> ドメイン型の変換
+    ├── habit/                  # 習慣化・目標・振り返り・XP（docs/HABIT.md）
     └── ping/
         └── index.ts            # 最小のお手本として残しておく
 

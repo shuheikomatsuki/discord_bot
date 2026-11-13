@@ -120,3 +120,22 @@ export function putGlobalCommands(
 ): Promise<Response> {
   return request('PUT', `/applications/${applicationId}/commands`, { token, body });
 }
+
+/** Bot が投稿したメッセージを書き換える（締め切り後にボタンを外すなど） */
+export function editMessage(
+  token: string,
+  channelId: string,
+  messageId: string,
+  body: RESTPostAPIChannelMessageJSONBody,
+): Promise<Response> {
+  return request('PATCH', `/channels/${channelId}/messages/${messageId}`, { token, body });
+}
+
+/** interaction へのフォローアップ（defer 後に本人だけへエラーを伝えるときなど） */
+export function createFollowupMessage(
+  applicationId: string,
+  interactionToken: string,
+  body: APIInteractionResponseCallbackData,
+): Promise<Response> {
+  return request('POST', `/webhooks/${applicationId}/${interactionToken}`, { body });
+}
