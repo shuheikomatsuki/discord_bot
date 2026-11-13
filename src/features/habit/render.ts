@@ -105,7 +105,12 @@ export function habitSchedule(h: Habit): string {
 
 export function habitLine(h: Habit): string {
   const paused = h.status === 'paused' ? ' ⏸️停止中' : '';
-  return `\`${shortHabitId(h.id)}\` **${h.name}** — ${habitSchedule(h)} <#${h.channelId}>${paused}\n　🔥 ${h.currentStreak}日連続（最高 ${h.bestStreak}日）・累計 ${h.totalDone}回`;
+  // 投稿に失敗して止まった理由を本人に見せる（権限不足など、本人が直せるもの）
+  const error =
+    h.status === 'paused' && h.lastError
+      ? `\n　⚠️ 投稿に失敗して停止しました: ${h.lastError.slice(0, 150)}`
+      : '';
+  return `\`${shortHabitId(h.id)}\` **${h.name}** — ${habitSchedule(h)} <#${h.channelId}>${paused}\n　🔥 ${h.currentStreak}日連続（最高 ${h.bestStreak}日）・累計 ${h.totalDone}回${error}`;
 }
 
 export function habitAutocompleteLabel(h: Habit): string {

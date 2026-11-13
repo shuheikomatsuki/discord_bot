@@ -90,6 +90,7 @@ async function promptOne(env: Env, habit: Habit, scheduledAt: number, now: numbe
     await repo.attachMessage(env.DB, checkinId, habit.channelId, message.id);
     await repo.finishPrompt(env.DB, habit.id, next, now);
   } catch (error) {
+    console.error('habit prompt failed', habit.id, habit.channelId, describe(error));
     if (error instanceof DiscordApiError && error.isPermanent) {
       // チャンネル削除・権限不足。毎分失敗し続けないよう止める（行は残すので未達として締まる）
       await repo.pauseHabitWithError(env.DB, habit.id, describe(error), now);
