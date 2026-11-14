@@ -5,10 +5,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fromZonedParts } from '../src/core/time';
 import type { Env } from '../src/env';
-import { closeStaleCheckins, promptDueHabits, sendSummaries } from '../src/features/habit/cron';
+import {
+  closeStaleCheckins,
+  promptDueHabits,
+  remindUnanswered,
+  sendSummaries,
+} from '../src/features/habit/cron';
 import { nextPromptAt, parseDays } from '../src/features/habit/dates';
+import { buildReport, weekPeriod } from '../src/features/habit/report';
 import * as repo from '../src/features/habit/repository';
-import { answer, HabitUserError } from '../src/features/habit/service';
+import { answer, checkinButtons, HabitUserError } from '../src/features/habit/service';
 import { createTestD1 } from './helpers/d1';
 
 const TZ = 'Asia/Tokyo';
@@ -56,6 +62,9 @@ async function createHabit(opts: {
   days?: string;
   autoFreeze?: boolean;
   userId?: string;
+  remindMinute?: number | null;
+  unit?: string | null;
+  dailyTarget?: number | null;
 }) {
   const id = `01HABIT${(opts.userId ?? 'u1').toUpperCase()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   const daysMask = parseDays(opts.days);
@@ -70,6 +79,9 @@ async function createHabit(opts: {
     daysMask,
     autoFreeze: opts.autoFreeze ?? true,
     nextPromptAt: nextPromptAt(opts.now, 21 * 60, daysMask, TZ).at,
+    remindMinute: opts.remindMinute ?? null,
+    unit: opts.unit ?? null,
+    dailyTarget: opts.dailyTarget ?? null,
     now: opts.now,
   });
   await repo.ensureProfile(env.DB, 'g1', opts.userId ?? 'u1', opts.now, 'c1');
@@ -269,5 +281,97 @@ describe('投稿の失敗', () => {
     after = await repo.getHabit(env.DB, habit.id);
     expect(after?.nextPromptAt).toBe(jst(14, 21));
     expect(after?.lastError).toContain('401');
+  });
+});
+
+describe('未回答の再通知', () => {
+  it('再通知の時刻に未回答なら、元の投稿に1回だけ返信する', async () => {
+    const habit = await createHabit({ now: jst(13, 20), remindMinute: 23 * 60 });
+    vi.useFakeTimers();
+    vi.setSystemTime(jst(13, 21) * 1000);
+    await promptDueHabits(env);
+    expect(sent).toHaveLength(1);
+
+    vi.setSystemTime(jst(13, 22, 59) * 1000);
+    await remindUnanswered(env);
+    expect(sent).toHaveLength(1);
+
+    vi.setSystemTime(jst(13, 23) * 1000);
+    await remindUnanswered(env);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.url).toContain('/channels/c1/messages');
+    expect(sent[1]?.body?.message_reference).toMatchObject({ message_id: 'msg1' });
+    expect(String(sent[1]?.body?.content)).toContain('<@u1>');
+    expect(sent[1]?.body?.components).toBeUndefined();
+
+    vi.setSystemTime(jst(13, 23, 30) * 1000);
+    await remindUnanswered(env);
+    expect(sent).toHaveLength(2);
+    expect((await repo.getCheckin(env.DB, habit.id, '2026-11-13'))?.status).toBe('pending');
+  });
+
+  it('回答済み・再通知なし・チェックインより前の時刻なら送らない', async () => {
+    const answered = await createHabit({ now: jst(13, 20), remindMinute: 23 * 60 });
+    await createHabit({ now: jst(13, 20), remindMinute: null, userId: 'u2' });
+    await createHabit({ now: jst(13, 20), remindMinute: 20 * 60, userId: 'u3' });
+    vi.useFakeTimers();
+    vi.setSystemTime(jst(13, 21) * 1000);
+    await promptDueHabits(env);
+    expect(sent).toHaveLength(3);
+
+    await answer(env, answered, '2026-11-13', 'done', null, jst(13, 22));
+    vi.setSystemTime(jst(13, 23, 10) * 1000);
+    await remindUnanswered(env);
+    expect(sent).toHaveLength(3);
+  });
+
+  it('前日の未回答には再通知しない', async () => {
+    const habit = await createHabit({ now: jst(12, 8), remindMinute: 23 * 60 });
+    await repo.insertCheckin(env.DB, {
+      id: '01CKYESTERDAY',
+      habit,
+      date: '2026-11-12',
+      status: 'pending',
+      now: jst(12, 21),
+    });
+    await repo.attachMessage(env.DB, '01CKYESTERDAY', 'c1', 'old');
+    vi.useFakeTimers();
+    vi.setSystemTime(jst(13, 23, 5) * 1000);
+    await remindUnanswered(env);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe('量の記録', () => {
+  it('量を記録し、done 以外にすると消え、まとめに合計が出る', async () => {
+    let habit = await createHabit({ now: jst(9, 8), unit: '分', dailyTarget: 30 });
+    habit = (await answer(env, habit, '2026-11-09', 'done', null, jst(9, 21), 20)).habit;
+    const day10 = await answer(env, habit, '2026-11-10', 'done', 'がんばった', jst(10, 21), 40);
+    expect(day10.checkin.amount).toBe(40);
+    expect(day10.checkin.note).toBe('がんばった');
+
+    // メモだけ直しても量は残る
+    const edited = await answer(env, habit, '2026-11-10', 'done', '修正', jst(10, 22));
+    expect(edited.checkin.amount).toBe(40);
+
+    await answer(env, habit, '2026-11-11', 'done', null, jst(11, 21), 15);
+    const missed = await answer(env, habit, '2026-11-11', 'missed', null, jst(11, 22));
+    expect(missed.checkin.amount).toBeNull();
+
+    const report = await buildReport(env, 'g1', 'u1', weekPeriod('2026-11-09'), '2026-11-15');
+    expect(report.embed.description).toContain('合計 60分（平均 30分/回）');
+  });
+
+  it('量を記録する習慣は「記録する」ボタン（量の入力フォーム）を出す', () => {
+    const buttons = (habit: { unit: string | null }) =>
+      (checkinButtons({ id: 'H1', ...habit }, '2026-11-13')[0]?.components ?? []).map((b) =>
+        'custom_id' in b ? b.custom_id : '',
+      );
+    expect(buttons({ unit: '分' })).toEqual([
+      'v1:habit:note:H1:2026-11-13',
+      'v1:habit:freeze:H1:2026-11-13',
+      'v1:habit:miss:H1:2026-11-13',
+    ]);
+    expect(buttons({ unit: null })).toHaveLength(4);
   });
 });

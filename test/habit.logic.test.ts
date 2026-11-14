@@ -4,12 +4,15 @@ import { duePeriods } from '../src/features/habit/cron';
 import {
   addDays,
   dateKeyOf,
+  defaultRemindMinute,
   describeDays,
   EVERY_DAY,
   HabitInputError,
   nextPromptAt,
+  parseAmount,
   parseDateInput,
   parseDays,
+  parseRemindTime,
   parseTimeOfDay,
   weekStartOf,
 } from '../src/features/habit/dates';
@@ -27,7 +30,12 @@ import {
   progressBar,
   sparkline,
 } from '../src/features/habit/render';
-import { monthPeriod, previousPeriod, weekPeriod } from '../src/features/habit/report';
+import {
+  amountSummary,
+  monthPeriod,
+  previousPeriod,
+  weekPeriod,
+} from '../src/features/habit/report';
 import { type Goal, goalProgress, goalReached } from '../src/features/habit/schema';
 import { achievementRate, computeStreak } from '../src/features/habit/streak';
 
@@ -242,5 +250,43 @@ describe('periods', () => {
     // 12/1 の 8時は先月(11月)分はまだ
     const dec1 = jst(2026, 12, 1, 8, 0);
     expect(duePeriods(dec1, TZ, '2026-12-01').map((p) => p.key)).toEqual(['2026-11-23']);
+  });
+});
+
+describe('再通知・量の入力', () => {
+  it('parseRemindTime', () => {
+    expect(parseRemindTime('23:00')).toBe(1380);
+    expect(parseRemindTime('なし')).toBeNull();
+    expect(parseRemindTime('off')).toBeNull();
+    expect(() => parseRemindTime('あとで')).toThrow();
+  });
+
+  it('defaultRemindMinute は23時より前の習慣だけ', () => {
+    expect(defaultRemindMinute(21 * 60)).toBe(1380);
+    expect(defaultRemindMinute(23 * 60)).toBeNull();
+    expect(defaultRemindMinute(23 * 60 + 30)).toBeNull();
+  });
+
+  it('parseAmount', () => {
+    expect(parseAmount('30')).toBe(30);
+    expect(parseAmount('１．５')).toBe(1.5);
+    expect(parseAmount('2,000')).toBe(2000);
+    expect(parseAmount('30分')).toBe(30);
+    expect(parseAmount('5 km')).toBe(5);
+    expect(() => parseAmount('たくさん')).toThrow();
+    expect(() => parseAmount('-3')).toThrow();
+    expect(() => parseAmount('3a0')).toThrow();
+  });
+
+  it('amountSummary', () => {
+    expect(amountSummary(null, [{ status: 'done', amount: 3 }])).toBe('');
+    expect(amountSummary('分', [{ status: 'missed', amount: null }])).toBe('');
+    expect(
+      amountSummary('km', [
+        { status: 'done', amount: 3 },
+        { status: 'done', amount: 4.5 },
+        { status: 'done', amount: null },
+      ]),
+    ).toContain('合計 7.5km（平均 3.75km/回）');
   });
 });

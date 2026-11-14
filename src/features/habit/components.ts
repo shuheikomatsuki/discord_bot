@@ -22,8 +22,9 @@ import type {
 } from '../../core/types';
 import { createFollowupMessage, editOriginalInteractionResponse } from '../../discord/rest';
 import type { Env } from '../../env';
+import { HabitInputError, parseAmount } from './dates';
 import { XP } from './gamification';
-import { answeredContent } from './render';
+import { answeredContent, formatNumber } from './render';
 import type { SummaryKind } from './repository';
 import * as repo from './repository';
 import {
@@ -117,6 +118,7 @@ function runAnswer(
   target: { habitId: string; date: string },
   status: Answer,
   note: string | null,
+  amount: number | null = null,
 ): void {
   const { env, interaction } = c;
   c.ctx.waitUntil(
@@ -124,7 +126,7 @@ function runAnswer(
       try {
         const habit = await repo.getHabit(env.DB, target.habitId);
         if (!habit) throw new HabitUserError('この習慣はもう削除されています。');
-        const result = await answer(env, habit, target.date, status, note, nowSeconds());
+        const result = await answer(env, habit, target.date, status, note, nowSeconds(), amount);
         await editOriginalInteractionResponse(env.DISCORD_APPLICATION_ID, interaction.token, {
           content: answeredContent(
             result.habit,
@@ -133,8 +135,9 @@ function runAnswer(
             result.checkin.note,
             result.summary,
             false,
+            result.checkin.amount,
           ),
-          components: checkinButtons(habit.id, target.date),
+          components: checkinButtons(habit, target.date),
           allowed_mentions: { parse: [] },
         });
       } catch (error) {
@@ -162,24 +165,56 @@ const answerButton =
     return deferUpdate();
   };
 
+/** メモのフォーム。量を記録する習慣では量の欄を先頭に出し、メモは任意にする */
 const noteButton: ComponentHandler = async (c) => {
   const target = await loadForAnswer(c.env, c.args, actorOf(c.interaction));
   if (typeof target === 'string') return reply(ephemeralText(`⚠️ ${target}`));
-  const existing = await repo.getCheckin(c.env.DB, target.habitId, target.date);
+  const [habit, existing] = await Promise.all([
+    repo.getHabit(c.env.DB, target.habitId),
+    repo.getCheckin(c.env.DB, target.habitId, target.date),
+  ]);
+  const unit = habit?.unit ?? null;
+  const fields = unit
+    ? [
+        textField(
+          'amount',
+          `量（${unit}）${habit?.dailyTarget != null ? ` 目安 ${formatNumber(habit.dailyTarget)}${unit}` : ''}`.slice(
+            0,
+            45,
+          ),
+          {
+            required: true,
+            max: 20,
+            paragraph: false,
+            value: existing?.amount != null ? formatNumber(existing.amount) : null,
+          },
+        ),
+        textField('note', 'メモ（任意）', { max: 300, value: existing?.note }),
+      ]
+    : [textField('note', '今日のメモ', { required: true, max: 300, value: existing?.note })];
   return modal({
     custom_id: encodeCustomId(FEATURE_NAME, 'note', target.habitId, target.date),
-    title: '📝 メモして記録（達成）',
-    components: [
-      textField('note', '今日のメモ', { required: true, max: 300, value: existing?.note }),
-    ],
+    title: unit ? '📏 量を記録（達成）' : '📝 メモして記録（達成）',
+    components: fields,
   });
 };
 
 const noteSubmit: ModalHandler = async (c) => {
   const target = await loadForAnswer(c.env, c.args, actorOf(c.interaction));
   if (typeof target === 'string') return reply(ephemeralText(`⚠️ ${target}`));
-  const note = (modalValues(c.interaction).get('note') ?? '').trim() || null;
-  runAnswer(c, target, 'done', note);
+  const values = modalValues(c.interaction);
+  const note = (values.get('note') ?? '').trim() || null;
+  const rawAmount = (values.get('amount') ?? '').trim();
+  let amount: number | null = null;
+  if (rawAmount) {
+    try {
+      amount = parseAmount(rawAmount);
+    } catch (error) {
+      if (error instanceof HabitInputError) return reply(ephemeralText(`⚠️ ${error.message}`));
+      throw error;
+    }
+  }
+  runAnswer(c, target, 'done', note, amount);
   // ボタンのメッセージから開いたモーダルなので、元のメッセージを書き換えられる
   return deferUpdate();
 };

@@ -103,6 +103,21 @@ export function habitSchedule(h: Habit): string {
   return `${describeDays(h.daysMask)} ${formatMinute(h.checkMinute)}`;
 }
 
+/** 量の表示。単位なしの習慣では null */
+export function amountText(h: Habit, amount: number | null): string | null {
+  if (!h.unit || amount === null) return null;
+  const target =
+    h.dailyTarget !== null
+      ? `（目安 ${formatNumber(h.dailyTarget)}${h.unit}${amount >= h.dailyTarget ? ' 🎯' : ''}）`
+      : '';
+  return `📏 ${formatNumber(amount)}${h.unit}${target}`;
+}
+
+/** 再通知が実際に働く設定か（チェックインより後の時刻であること） */
+export function remindActive(h: Habit): boolean {
+  return h.remindMinute !== null && h.remindMinute > h.checkMinute;
+}
+
 export function habitLine(h: Habit): string {
   const paused = h.status === 'paused' ? ' ⏸️停止中' : '';
   // 投稿に失敗して止まった理由を本人に見せる（権限不足など、本人が直せるもの）
@@ -110,7 +125,16 @@ export function habitLine(h: Habit): string {
     h.status === 'paused' && h.lastError
       ? `\n　⚠️ 投稿に失敗して停止しました: ${h.lastError.slice(0, 150)}`
       : '';
-  return `\`${shortHabitId(h.id)}\` **${h.name}** — ${habitSchedule(h)} <#${h.channelId}>${paused}\n　🔥 ${h.currentStreak}日連続（最高 ${h.bestStreak}日）・累計 ${h.totalDone}回${error}`;
+  const extras: string[] = [];
+  if (remindActive(h) && h.remindMinute !== null)
+    extras.push(`🔔 未回答なら ${formatMinute(h.remindMinute)} に再通知`);
+  if (h.unit) {
+    extras.push(
+      `📏 量を記録（${h.unit}${h.dailyTarget !== null ? `・目安 ${formatNumber(h.dailyTarget)}${h.unit}` : ''}）`,
+    );
+  }
+  const extra = extras.length > 0 ? `\n　${extras.join(' · ')}` : '';
+  return `\`${shortHabitId(h.id)}\` **${h.name}** — ${habitSchedule(h)} <#${h.channelId}>${paused}\n　🔥 ${h.currentStreak}日連続（最高 ${h.bestStreak}日）・累計 ${h.totalDone}回${extra}${error}`;
 }
 
 export function habitAutocompleteLabel(h: Habit): string {
@@ -132,6 +156,11 @@ export function promptContent(h: Habit, date: string): string {
   return `<@${h.userId}> ⏰ **${h.name}** の時間です（${formatDateJa(date)}）\n今日はできましたか？${streak}`;
 }
 
+/** 未回答のまま再通知の時刻になったとき、元の投稿に返信する文面 */
+export function reminderContent(h: Habit): string {
+  return `<@${h.userId}> 🔔 **${h.name}** がまだ未回答です。上のボタンから記録してください（受付は 0:00 まで）${h.currentStreak > 0 ? `\n🔥 ${h.currentStreak}日連続がかかっています` : ''}`;
+}
+
 export interface AnswerSummary {
   streak: number;
   xpGained: number;
@@ -148,8 +177,11 @@ export function answeredContent(
   note: string | null,
   summary: AnswerSummary | null,
   closed: boolean,
+  amount: number | null = null,
 ): string {
   const lines = [`<@${h.userId}> **${h.name}**（${formatDateJa(date)}）`, STATUS_TEXT[status]];
+  const measured = status === 'done' ? amountText(h, amount) : null;
+  if (measured) lines.push(measured);
   if (note) lines.push(`> ${note.replace(/\n/g, '\n> ')}`);
   if (summary) {
     const parts = [`🔥 ${summary.streak}日連続`];

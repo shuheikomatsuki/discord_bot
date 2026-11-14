@@ -1,6 +1,6 @@
 import type { Feature } from '../../core/types';
 import { components, modals } from './components';
-import { closeStaleCheckins, promptDueHabits, sendSummaries } from './cron';
+import { closeStaleCheckins, promptDueHabits, remindUnanswered, sendSummaries } from './cron';
 import { goalCommand } from './goalCommand';
 import { habitCommand } from './habitCommand';
 import { FEATURE_NAME } from './service';
@@ -17,6 +17,8 @@ const feature: Feature = {
     { name: 'habit:close', run: (env) => closeStaleCheckins(env) },
     { name: 'habit:prompt', run: (env) => promptDueHabits(env) },
     { name: 'habit:summary', run: (env) => sendSummaries(env) },
+    // 当日の pending だけを触る。回答と競合しても claim の条件（status = 'pending'）で弾かれる
+    { name: 'habit:remind', run: (env) => remindUnanswered(env) },
   ],
 };
 

@@ -20,6 +20,9 @@ export interface HabitRow {
   best_streak: number;
   total_done: number;
   last_error: string | null;
+  remind_minute: number | null;
+  unit: string | null;
+  daily_target: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -40,6 +43,11 @@ export interface Habit {
   bestStreak: number;
   totalDone: number;
   lastError: string | null;
+  /** 未回答のときに再通知する時刻（0:00 からの分）。null = しない */
+  remindMinute: number | null;
+  /** 量を記録する習慣の単位。null = やった・やらないだけ */
+  unit: string | null;
+  dailyTarget: number | null;
   createdAt: number;
 }
 
@@ -60,6 +68,9 @@ export function toHabit(row: HabitRow): Habit {
     bestStreak: row.best_streak,
     totalDone: row.total_done,
     lastError: row.last_error,
+    remindMinute: row.remind_minute,
+    unit: row.unit,
+    dailyTarget: row.daily_target,
     createdAt: row.created_at,
   };
 }
@@ -76,6 +87,7 @@ export interface CheckinRow {
   message_id: string | null;
   xp_awarded: number;
   answered_at: number | null;
+  amount: number | null;
 }
 
 export interface Checkin {
@@ -89,6 +101,7 @@ export interface Checkin {
   channelId: string | null;
   messageId: string | null;
   xpAwarded: boolean;
+  amount: number | null;
 }
 
 export function toCheckin(row: CheckinRow): Checkin {
@@ -103,6 +116,7 @@ export function toCheckin(row: CheckinRow): Checkin {
     channelId: row.channel_id,
     messageId: row.message_id,
     xpAwarded: row.xp_awarded === 1,
+    amount: row.amount,
   };
 }
 

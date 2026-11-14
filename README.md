@@ -25,7 +25,7 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 /remind delete id:<ID>
 /ping
 
-/habit add   name:<名前> time:<21:00> [days] [channel] [auto_freeze]
+/habit add   name:<名前> time:<21:00> [days] [channel] [auto_freeze] [remind] [unit] [target]
 /habit list | done | freeze | edit | pause | resume | delete | settings
 /goal  add   name:<目標> [target] [unit] [start] [deadline]
 /goal  log | list | show | complete | delete

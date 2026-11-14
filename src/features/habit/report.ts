@@ -15,6 +15,7 @@ import {
 import { levelInfo } from './gamification';
 import {
   calendarGrid,
+  formatNumber,
   goalLine,
   indexByDate,
   LEGEND,
@@ -62,6 +63,20 @@ export interface Report {
   empty: boolean;
   /** 予定（3回以上）をすべて達成した */
   perfect: boolean;
+}
+
+/** 量を記録する習慣の、期間内の合計と1回あたりの平均 */
+export function amountSummary(
+  unit: string | null,
+  records: { status: string; amount: number | null }[],
+): string {
+  if (!unit) return '';
+  const amounts = records
+    .filter((r) => r.status === 'done' && r.amount !== null)
+    .map((r) => r.amount as number);
+  if (amounts.length === 0) return '';
+  const total = amounts.reduce((a, b) => a + b, 0);
+  return `\n　📏 合計 ${formatNumber(total)}${unit}（平均 ${formatNumber(total / amounts.length)}${unit}/回）`;
 }
 
 export async function buildReport(
@@ -129,7 +144,7 @@ export async function buildReport(
       const row =
         period.kind === 'week' ? `\n　${weekRow(indexByDate(own), period.from, today)}` : '';
       lines.push(
-        `**${h.name}** ${percent(rate.rate)}（${rate.done}/${rate.done + rate.missed}）🔥${h.currentStreak}${row}`,
+        `**${h.name}** ${percent(rate.rate)}（${rate.done}/${rate.done + rate.missed}）🔥${h.currentStreak}${amountSummary(h.unit, own)}${row}`,
       );
     }
   }
