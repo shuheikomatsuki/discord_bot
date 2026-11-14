@@ -12,11 +12,12 @@
 ## コマンド
 
 ```
-/habit add      name time [days] [channel] [auto_freeze]   習慣を登録（例: time:21:00 days:平日）
+/habit add      name time [days] [channel] [auto_freeze] [remind] [unit] [target]
+                                                           習慣を登録（例: time:21:00 days:平日 unit:分 target:30）
 /habit list                                                自分の習慣・レベル・フリーズ在庫
-/habit done     id [note]                                  今日の分を今すぐ記録（通知前にやり終えたとき）
+/habit done     id [amount] [note]                         今日の分を今すぐ記録（通知前にやり終えたとき）
 /habit freeze   id [days] [start]                          休む日を前もってフリーズ
-/habit edit     id [name] [time] [days] [channel] [auto_freeze]
+/habit edit     id [name] [time] [days] [channel] [auto_freeze] [remind] [unit] [target]
 /habit pause | resume | delete  id
 /habit settings [summary_channel] [hide_ranking]           まとめの投稿先・ランキング表示
 
@@ -33,6 +34,12 @@
 
 `days` は `毎日` / `平日` / `土日` / `月水金` / `mon,wed,fri` などで指定できる。
 
+- `remind` … 未回答のまま、この時刻になったら元の投稿に返信して知らせる（1日1回）。
+  未指定なら 23:00（23時以降に聞く習慣は再通知なし）。`なし` で止める。チェックインの時刻より後でないと働かない
+- `unit` / `target` … 量を記録する習慣にする（例: `unit:分 target:30`）。`unit:なし` で解除。
+  ボタンが「📏 記録する」になり、押すと量とメモを入れるフォームが開く。`target` は目安の表示だけで、
+  下回っても達成として数える（届けば 🎯）。まとめには期間の合計と1回あたりの平均が出る
+
 ## チェックインの流れ
 
 ```
@@ -41,7 +48,9 @@
   │                その日の行が既にあれば（/habit done 済み・フリーズ予約済み）投稿しない
   ├─ habit:close   前日以前で未回答の行を締める（偶数分のみ）
   │                auto_freeze がオンでフリーズの在庫があれば frozen、なければ missed にしてボタンを外す
-  └─ habit:summary 月曜9時以降に先週、毎月1日9時以降に先月のまとめを送る（奇数分のみ・1分1人）
+  ├─ habit:summary 月曜9時以降に先週、毎月1日9時以降に先月のまとめを送る（奇数分のみ・1分1人）
+  └─ habit:remind  今日の未回答で remind の時刻を過ぎたものに、元の投稿への返信で再通知（1分3件）
+                   先に reminded_at を立ててから送るので、同じ日に2回は鳴らない
 ```
 
 二重投稿は reminder と同じ楽観ロック（`next_prompt_at` を条件にした UPDATE + リース）と、
@@ -88,7 +97,7 @@ Workers では画像を作りにくいので絵文字で描く。
 ## D1 の負荷について
 
 Workers Free では、1回の起動で使える D1 クエリの数に上限がある（50前後）。毎分の cron は reminder も含めて
-1回の起動を共有するので、1分あたりの処理件数を絞っている（prompt 5件、close 3件、summary 1人）。
+1回の起動を共有するので、1分あたりの処理件数を絞っている（prompt 5件、close 3件、summary 1人、remind 3件）。
 残りは次の分に持ち越されるだけなので、同じ時刻の習慣が多くても数分のうちにすべて処理される。
 
 ## テスト

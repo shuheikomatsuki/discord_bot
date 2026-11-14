@@ -27,7 +27,7 @@ const changed = (r: D1Result): boolean => (r.meta.changes ?? 0) > 0;
 
 const HABIT_COLUMNS = `id, guild_id, user_id, channel_id, name, timezone, check_minute, days_mask,
   auto_freeze, status, next_prompt_at, lease_until, current_streak, best_streak, total_done,
-  last_error, created_at, updated_at`;
+  last_error, remind_minute, unit, daily_target, created_at, updated_at`;
 
 export interface NewHabit {
   id: string;
@@ -40,6 +40,9 @@ export interface NewHabit {
   daysMask: number;
   autoFreeze: boolean;
   nextPromptAt: number;
+  remindMinute?: number | null;
+  unit?: string | null;
+  dailyTarget?: number | null;
   now: number;
 }
 
@@ -47,8 +50,9 @@ export async function insertHabit(db: D1Database, h: NewHabit): Promise<void> {
   await db
     .prepare(
       `INSERT INTO habits (id, guild_id, user_id, channel_id, name, timezone, check_minute,
-         days_mask, auto_freeze, status, next_prompt_at, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?11, ?11)`,
+         days_mask, auto_freeze, status, next_prompt_at, remind_minute, unit, daily_target,
+         created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?12, ?13, ?14, ?11, ?11)`,
     )
     .bind(
       h.id,
@@ -62,6 +66,9 @@ export async function insertHabit(db: D1Database, h: NewHabit): Promise<void> {
       h.autoFreeze ? 1 : 0,
       h.nextPromptAt,
       h.now,
+      h.remindMinute ?? null,
+      h.unit ?? null,
+      h.dailyTarget ?? null,
     )
     .run();
 }
@@ -117,6 +124,9 @@ export interface HabitPatch {
   autoFreeze?: boolean;
   status?: HabitStatus;
   nextPromptAt?: number | null;
+  remindMinute?: number | null;
+  unit?: string | null;
+  dailyTarget?: number | null;
 }
 
 export async function updateHabit(
@@ -138,6 +148,9 @@ export async function updateHabit(
   if (patch.autoFreeze !== undefined) push('auto_freeze', patch.autoFreeze ? 1 : 0);
   if (patch.status !== undefined) push('status', patch.status);
   if (patch.nextPromptAt !== undefined) push('next_prompt_at', patch.nextPromptAt);
+  if (patch.remindMinute !== undefined) push('remind_minute', patch.remindMinute);
+  if (patch.unit !== undefined) push('unit', patch.unit);
+  if (patch.dailyTarget !== undefined) push('daily_target', patch.dailyTarget);
   if (sets.length === 0) return false;
   push('updated_at', now);
   binds.push(id);
@@ -258,7 +271,7 @@ export async function pauseHabitWithError(
 // ================================================================ checkins
 
 const CHECKIN_COLUMNS = `id, habit_id, guild_id, user_id, date, status, note, channel_id,
-  message_id, xp_awarded, answered_at`;
+  message_id, xp_awarded, answered_at, amount`;
 
 export async function getCheckin(
   db: D1Database,
@@ -317,6 +330,8 @@ export async function setCheckinStatus(
     id: string;
     status: CheckinStatus;
     note?: string | null;
+    /** done のときだけ残す。未指定なら前の値のまま、done 以外にすると消す */
+    amount?: number | null;
     expected?: CheckinStatus[];
     now: number;
   },
@@ -337,6 +352,7 @@ export async function setCheckinStatus(
       `UPDATE habit_checkins
           SET status = ?2,
               note = COALESCE(?3, note),
+              amount = CASE WHEN ?2 = 'done' THEN COALESCE(?7, amount) ELSE NULL END,
               xp_awarded = CASE WHEN ?4 = 1 THEN 1 ELSE xp_awarded END,
               answered_at = ?5,
               updated_at = ?5
@@ -349,6 +365,7 @@ export async function setCheckinStatus(
       firstDone ? 1 : 0,
       params.now,
       before.xp_awarded,
+      params.amount ?? null,
     )
     .run();
   const updated = changed(result);
@@ -365,6 +382,7 @@ export async function habitRecords(db: D1Database, habitId: string): Promise<Day
 
 export interface UserDayRecord extends DayRecord {
   habitId: string;
+  amount: number | null;
 }
 
 export async function userRecords(
@@ -376,7 +394,7 @@ export async function userRecords(
 ): Promise<UserDayRecord[]> {
   const { results } = await db
     .prepare(
-      `SELECT habit_id AS habitId, date, status FROM habit_checkins
+      `SELECT habit_id AS habitId, date, status, amount FROM habit_checkins
        WHERE guild_id = ?1 AND user_id = ?2 AND date >= ?3 AND date <= ?4
        ORDER BY date ASC`,
     )
@@ -414,6 +432,68 @@ export async function findStalePending(
     .bind(today, limit)
     .all<CheckinRow>();
   return (results ?? []).map(toCheckin);
+}
+
+export interface DueReminder {
+  checkin: Checkin;
+  habit: Habit;
+}
+
+/**
+ * 今日まだ回答が無く、再通知の時刻を過ぎたチェックイン。
+ * 投稿に成功した（message_id がある）ものだけを対象にし、返信の形で知らせる。
+ */
+export async function findDueReminders(
+  db: D1Database,
+  today: string,
+  minuteOfDay: number,
+  limit: number,
+): Promise<DueReminder[]> {
+  const habitCols = HABIT_COLUMNS.split(',')
+    .map((c) => `h.${c.trim()} AS h_${c.trim()}`)
+    .join(', ');
+  const checkinCols = CHECKIN_COLUMNS.split(',')
+    .map((c) => `c.${c.trim()}`)
+    .join(', ');
+  const { results } = await db
+    .prepare(
+      `SELECT ${checkinCols}, ${habitCols} FROM habit_checkins c
+       JOIN habits h ON h.id = c.habit_id
+       WHERE c.status = 'pending' AND c.date = ?1 AND c.reminded_at IS NULL
+         AND c.message_id IS NOT NULL AND h.status = 'active'
+         AND h.remind_minute IS NOT NULL AND h.remind_minute > h.check_minute
+         AND h.remind_minute <= ?2
+       ORDER BY h.remind_minute ASC LIMIT ?3`,
+    )
+    .bind(today, minuteOfDay, limit)
+    .all<Record<string, unknown>>();
+  return (results ?? []).map((row) => {
+    const habitRow: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (k.startsWith('h_')) habitRow[k.slice(2)] = v;
+    }
+    return {
+      checkin: toCheckin(row as unknown as CheckinRow),
+      habit: toHabit(habitRow as unknown as HabitRow),
+    };
+  });
+}
+
+/** 再通知の権利を取る（1日1回・二重送信防止）。取れたら true */
+export async function claimReminder(
+  db: D1Database,
+  checkinId: string,
+  now: number,
+): Promise<boolean> {
+  return changed(
+    await db
+      .prepare(
+        `UPDATE habit_checkins SET reminded_at = ?2
+         WHERE id = ?1 AND reminded_at IS NULL AND status = 'pending'`,
+      )
+      .bind(checkinId, now)
+      .run(),
+  );
 }
 
 // ================================================================ profiles

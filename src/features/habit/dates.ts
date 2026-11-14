@@ -91,6 +91,33 @@ export function parseTimeOfDay(input: string): number {
   return hour * 60 + minute;
 }
 
+/** 再通知の時刻。「なし」「off」などで無効（null） */
+export function parseRemindTime(input: string): number | null {
+  const s = input.trim().toLowerCase();
+  if (['なし', '無し', 'off', 'no', 'none', '-', '0'].includes(s)) return null;
+  return parseTimeOfDay(input);
+}
+
+/** 新しい習慣の再通知の既定値。23時より前に聞く習慣だけ 23:00 に知らせる */
+export const DEFAULT_REMIND_MINUTE = 23 * 60;
+export function defaultRemindMinute(checkMinute: number): number | null {
+  return checkMinute < DEFAULT_REMIND_MINUTE ? DEFAULT_REMIND_MINUTE : null;
+}
+
+/** 量の入力。"30" / "１．５" / "2,000" / "30分" のような単位付きも受け付ける */
+export function parseAmount(input: string): number {
+  const s = input
+    .trim()
+    .replace(/[０-９．，]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/,/g, '');
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*[^\d\s]{0,10}$/);
+  const value = m ? Number(m[1]) : Number.NaN;
+  if (!Number.isFinite(value))
+    throw new HabitInputError(`数値を解釈できません: \`${input.slice(0, 30)}\`（例: 30）`);
+  if (value > 1_000_000) throw new HabitInputError('数値が大きすぎます。');
+  return value;
+}
+
 export function formatMinute(minuteOfDay: number): string {
   return `${PAD(Math.floor(minuteOfDay / 60))}:${PAD(minuteOfDay % 60)}`;
 }

@@ -39,15 +39,26 @@ export function todayOf(env: Env, now: number): string {
 
 // --------------------------------------------------------------- ボタン
 
+/**
+ * チェックインのボタン。量を記録する習慣は「やった」の代わりに「記録する」（量の入力フォーム）を出す。
+ * どちらの習慣でも custom_id は同じ形なので、古いボタンが残っていても動く。
+ */
 export function checkinButtons(
-  habitId: string,
+  habit: Pick<Habit, 'id' | 'unit'>,
   date: string,
 ): APIActionRowComponent<APIButtonComponent>[] {
-  const id = (action: string): string => encodeCustomId(FEATURE_NAME, action, habitId, date);
-  return [
-    {
-      type: ComponentType.ActionRow,
-      components: [
+  const id = (action: string): string => encodeCustomId(FEATURE_NAME, action, habit.id, date);
+  const record: APIButtonComponent[] = habit.unit
+    ? [
+        {
+          type: ComponentType.Button,
+          style: ButtonStyle.Success,
+          label: `記録する（${habit.unit}）`.slice(0, 80),
+          emoji: { name: '📏' },
+          custom_id: id('note'),
+        },
+      ]
+    : [
         {
           type: ComponentType.Button,
           style: ButtonStyle.Success,
@@ -62,6 +73,12 @@ export function checkinButtons(
           emoji: { name: '📝' },
           custom_id: id('note'),
         },
+      ];
+  return [
+    {
+      type: ComponentType.ActionRow,
+      components: [
+        ...record,
         {
           type: ComponentType.Button,
           style: ButtonStyle.Secondary,
@@ -141,6 +158,7 @@ export async function answer(
   status: Exclude<CheckinStatus, 'pending'>,
   note: string | null,
   now: number,
+  amount: number | null = null,
 ): Promise<AnswerResult> {
   const db = env.DB;
   const profile = await repo.ensureProfile(db, habit.guildId, habit.userId, now, habit.channelId);
@@ -160,6 +178,7 @@ export async function answer(
     id: before.id,
     status,
     note,
+    amount,
     expected: [before.status],
     now,
   });
@@ -232,8 +251,16 @@ export async function syncCheckinMessage(
   if (!checkin.channelId || !checkin.messageId) return;
   try {
     await editMessage(env.DISCORD_BOT_TOKEN, checkin.channelId, checkin.messageId, {
-      content: answeredContent(habit, checkin.date, checkin.status, checkin.note, summary, closed),
-      components: closed ? [] : checkinButtons(habit.id, checkin.date),
+      content: answeredContent(
+        habit,
+        checkin.date,
+        checkin.status,
+        checkin.note,
+        summary,
+        closed,
+        checkin.amount,
+      ),
+      components: closed ? [] : checkinButtons(habit, checkin.date),
       allowed_mentions: { parse: [] },
     });
   } catch (error) {

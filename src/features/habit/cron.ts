@@ -3,6 +3,7 @@
  *  1. prompt  … 時刻になった習慣のチェックインをチャンネルに投稿する
  *  2. close   … 日付が変わったのに未回答のチェックインを締める（自動フリーズ or 未達）
  *  3. summary … 月曜9時に先週の、毎月1日9時に先月のまとめを送る
+ *  4. remind  … 再通知の時刻になっても未回答のチェックインに、返信で知らせる
  */
 import { ButtonStyle, ComponentType } from 'discord-api-types/v10';
 import { encodeCustomId } from '../../core/customId';
@@ -11,7 +12,7 @@ import { ulid } from '../../core/ulid';
 import { createMessage, DiscordApiError } from '../../discord/rest';
 import type { Env } from '../../env';
 import { addDays, nextPromptAt } from './dates';
-import { promptContent } from './render';
+import { promptContent, reminderContent } from './render';
 import { buildReport, monthPeriod, type Period, weekPeriod } from './report';
 import * as repo from './repository';
 import type { Habit } from './schema';
@@ -34,6 +35,8 @@ import {
 const PROMPT_BATCH = 5;
 const CLOSE_BATCH = 3;
 const SUMMARY_BATCH = 1;
+/** remind は取得1回 + 1件1クエリ。prompt と同じ分に重なっても上限に収まるよう控えめにする */
+const REMIND_BATCH = 3;
 
 const isEvenMinute = (now: number): boolean => Math.floor(now / 60) % 2 === 0;
 const LEASE_SECONDS = 120;
@@ -83,7 +86,7 @@ async function promptOne(env: Env, habit: Habit, scheduledAt: number, now: numbe
   try {
     const response = await createMessage(env.DISCORD_BOT_TOKEN, habit.channelId, {
       content: promptContent(habit, date),
-      components: checkinButtons(habit.id, date),
+      components: checkinButtons(habit, date),
       allowed_mentions: { users: [habit.userId] },
     });
     const message = (await response.json()) as { id: string };
@@ -221,6 +224,34 @@ export async function sendSummaries(env: Env): Promise<void> {
       } catch (error) {
         console.error('summary send failed', profile.userId, period.key, describe(error));
       }
+    }
+  }
+}
+
+// ================================================================ 4. remind
+
+export async function remindUnanswered(env: Env): Promise<void> {
+  const now = nowSeconds();
+  const timeZone = timeZoneOf(env);
+  const p = toZonedParts(now, timeZone);
+  const due = await repo.findDueReminders(
+    env.DB,
+    todayOf(env, now),
+    p.hour * 60 + p.minute,
+    REMIND_BATCH,
+  );
+  for (const { checkin, habit } of due) {
+    // 先に送信済みにする。失敗しても再送はしない（同じ日に何度も鳴らさないため）
+    if (!(await repo.claimReminder(env.DB, checkin.id, now))) continue;
+    if (!checkin.channelId || !checkin.messageId) continue;
+    try {
+      await createMessage(env.DISCORD_BOT_TOKEN, checkin.channelId, {
+        content: reminderContent(habit),
+        message_reference: { message_id: checkin.messageId, fail_if_not_exists: false },
+        allowed_mentions: { users: [habit.userId], replied_user: false },
+      });
+    } catch (error) {
+      console.error('habit remind failed', habit.id, checkin.channelId, describe(error));
     }
   }
 }

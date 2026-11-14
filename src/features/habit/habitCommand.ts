@@ -4,7 +4,7 @@ import {
   ApplicationCommandType,
   ChannelType,
 } from 'discord-api-types/v10';
-import { getBoolean, getChannelId, getInteger, getString } from '../../core/options';
+import { getBoolean, getChannelId, getInteger, getNumber, getString } from '../../core/options';
 import { autocomplete } from '../../core/respond';
 import { nowSeconds } from '../../core/time';
 import type { AutocompleteContext, Command, CommandContext } from '../../core/types';
@@ -12,16 +12,27 @@ import { ulid } from '../../core/ulid';
 import { actor, confirmDelete, currentChannel, ephemeral, guarded, idOption } from './context';
 import {
   addDays,
+  defaultRemindMinute,
   eachDay,
   formatDateJa,
+  formatMinute,
   isScheduled,
   nextPromptAt,
+  parseAmount,
   parseDateInput,
   parseDays,
+  parseRemindTime,
   parseTimeOfDay,
 } from './dates';
 import { levelInfo } from './gamification';
-import { habitAutocompleteLabel, habitLine, habitSchedule, levelLine } from './render';
+import {
+  amountText,
+  habitAutocompleteLabel,
+  habitLine,
+  habitSchedule,
+  levelLine,
+  remindActive,
+} from './render';
 import * as repo from './repository';
 import type { Habit } from './schema';
 import {
@@ -64,7 +75,30 @@ const autoFreezeOption = {
   description: '未回答のまま日付が変わったら、在庫があれば自動でフリーズを使う（既定: オン）',
 } as const;
 
+const remindOption = {
+  type: ApplicationCommandOptionType.String,
+  name: 'remind',
+  description: '未回答のときに再通知する時刻。例: 23:00 / なし（既定: 23:00）',
+} as const;
+
+const unitOption = {
+  type: ApplicationCommandOptionType.String,
+  name: 'unit',
+  description: '量を記録するときの単位。例: 分 / km / ページ（「なし」で解除）',
+  max_length: 10,
+} as const;
+
+const targetOption = {
+  type: ApplicationCommandOptionType.Number,
+  name: 'target',
+  description: '1日の目安量（unit と一緒に使う。下回っても達成として記録）',
+  min_value: 0,
+  max_value: 1_000_000,
+} as const;
+
 const habitId = idOption('対象の習慣');
+
+const NONE_WORDS = ['なし', '無し', 'off', 'none', '-'];
 
 const definition = {
   name: 'habit',
@@ -87,6 +121,9 @@ const definition = {
         daysOption,
         channelOption,
         autoFreezeOption,
+        remindOption,
+        unitOption,
+        targetOption,
       ],
     },
     {
@@ -100,6 +137,12 @@ const definition = {
       description: '今日の分を今すぐ「やった」と記録する',
       options: [
         habitId,
+        {
+          type: ApplicationCommandOptionType.String,
+          name: 'amount',
+          description: '量（量を記録する習慣のとき）。例: 30',
+          max_length: 20,
+        },
         {
           type: ApplicationCommandOptionType.String,
           name: 'note',
@@ -144,6 +187,9 @@ const definition = {
         daysOption,
         channelOption,
         autoFreezeOption,
+        remindOption,
+        unitOption,
+        targetOption,
       ],
     },
     {
@@ -203,6 +249,24 @@ async function requireHabit(c: CommandContext): Promise<Habit> {
   return habit;
 }
 
+/** unit / target を読む。unit が「なし」なら解除（null）、未指定なら undefined */
+function readUnit(options: ReturnType<typeof actor>['options']): {
+  unit: string | null | undefined;
+  target: number | null | undefined;
+} {
+  const raw = getString(options, 'unit')?.trim();
+  const unit = raw === undefined ? undefined : !raw || NONE_WORDS.includes(raw) ? null : raw;
+  const target = getNumber(options, 'target');
+  return { unit, target: unit === null ? null : target };
+}
+
+function remindNote(h: Habit): string | null {
+  if (h.remindMinute !== null && !remindActive(h)) {
+    return `-# 🔔 再通知（${formatMinute(h.remindMinute)}）はチェックインの時刻より後でないと働きません。`;
+  }
+  return null;
+}
+
 function nextLine(h: Habit): string {
   return h.status === 'active' && h.nextPromptAt
     ? `次のチェックイン: <t:${h.nextPromptAt}:F>（<t:${h.nextPromptAt}:R>）`
@@ -222,6 +286,13 @@ async function add(c: CommandContext): Promise<APIInteractionResponseCallbackDat
   const daysMask = parseDays(getString(options, 'days'));
   const channelId = getChannelId(options, 'channel') ?? currentChannel(c.interaction);
 
+  const remindRaw = getString(options, 'remind');
+  const remindMinute =
+    remindRaw === undefined ? defaultRemindMinute(checkMinute) : parseRemindTime(remindRaw);
+  const { unit, target } = readUnit(options);
+  if (target !== undefined && target !== null && !unit)
+    throw new HabitUserError('`target` は `unit`（単位）と一緒に指定してください。');
+
   const existing = await repo.listHabits(c.env.DB, guildId, userId);
   if (existing.length >= MAX_HABITS)
     throw new HabitUserError(`習慣は1人 ${MAX_HABITS} 個までです。`);
@@ -239,6 +310,9 @@ async function add(c: CommandContext): Promise<APIInteractionResponseCallbackDat
     daysMask,
     autoFreeze: getBoolean(options, 'auto_freeze') ?? true,
     nextPromptAt: next.at,
+    remindMinute,
+    unit: unit ?? null,
+    dailyTarget: target ?? null,
     now,
   });
   // 最初の習慣のチャンネルを、まとめの投稿先にしておく
@@ -252,6 +326,10 @@ async function add(c: CommandContext): Promise<APIInteractionResponseCallbackDat
       nextLine(habit),
       '',
       `時刻になると <#${channelId}> で「やった？」と聞きます。ボタンで答えてください。`,
+      ...(habit.unit
+        ? [`「📏 記録する」ボタンで、その日の量（${habit.unit}）を入力できます。`]
+        : []),
+      ...(remindNote(habit) ? [remindNote(habit) as string] : []),
       '-# 先にやり終えたら `/habit done` でも記録できます。1日の区切りは深夜0時です。',
     ].join('\n'),
   );
@@ -279,8 +357,15 @@ async function done(c: CommandContext): Promise<APIInteractionResponseCallbackDa
   const now = nowSeconds();
   const today = todayOf(c.env, now);
   const note = getString(options, 'note')?.trim() || null;
+  const rawAmount = getString(options, 'amount')?.trim();
+  const amount = rawAmount ? parseAmount(rawAmount) : null;
+  if (amount !== null && !habit.unit) {
+    throw new HabitUserError(
+      'この習慣は量を記録しない設定です。`/habit edit` で `unit`（単位）を設定してください。',
+    );
+  }
 
-  const result = await answer(c.env, habit, today, 'done', note, now);
+  const result = await answer(c.env, habit, today, 'done', note, now, amount);
   await syncCheckinMessage(c.env, result.habit, result.checkin, result.summary, false);
 
   const s = result.summary;
@@ -288,6 +373,8 @@ async function done(c: CommandContext): Promise<APIInteractionResponseCallbackDa
     `✅ **${habit.name}**（${formatDateJa(today)}）を記録しました。`,
     `🔥 ${s.streak}日連続${s.xpGained > 0 ? ` · +${s.xpGained}XP` : ''}`,
   ];
+  const measured = amountText(result.habit, result.checkin.amount);
+  if (measured) lines.splice(1, 0, measured);
   if (s.leveledUpTo !== null) lines.push(`⬆️ レベル${s.leveledUpTo} になりました！`);
   if (s.freezeEarned) lines.push(`🧊 フリーズを1個獲得（在庫 ${s.freezesLeft}）`);
   if (s.newBadges.length > 0) lines.push('🎖️ 新しいバッジを獲得しました（`/stats profile`）');
@@ -375,6 +462,15 @@ async function edit(c: CommandContext): Promise<APIInteractionResponseCallbackDa
   if (channelId !== undefined) patch.channelId = channelId;
   const autoFreeze = getBoolean(options, 'auto_freeze');
   if (autoFreeze !== undefined) patch.autoFreeze = autoFreeze;
+  const remind = getString(options, 'remind');
+  if (remind !== undefined) patch.remindMinute = parseRemindTime(remind);
+  const { unit, target } = readUnit(options);
+  if (unit !== undefined) patch.unit = unit;
+  if (target !== undefined) {
+    if (target !== null && !(unit ?? habit.unit))
+      throw new HabitUserError('`target` は `unit`（単位）を設定した習慣にだけ使えます。');
+    patch.dailyTarget = target;
+  }
 
   if (
     (patch.checkMinute !== undefined || patch.daysMask !== undefined) &&
@@ -393,7 +489,10 @@ async function edit(c: CommandContext): Promise<APIInteractionResponseCallbackDa
   }
   const updated = await repo.getHabit(c.env.DB, habit.id);
   if (!updated) throw new Error('更新後の取得に失敗しました');
-  return ephemeral(`✏️ 更新しました。\n${habitLine(updated)}\n${nextLine(updated)}`);
+  const note = remindNote(updated);
+  return ephemeral(
+    `✏️ 更新しました。\n${habitLine(updated)}\n${nextLine(updated)}${note ? `\n${note}` : ''}`,
+  );
 }
 
 async function setPaused(
