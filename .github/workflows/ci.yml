@@ -1,0 +1,28 @@
+# push と PR のたびに型チェック・lint・テストを走らせる。
+# 失敗すると PR に ❌ が付くので、main にマージする前に気づける。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # テストの D1 シムが node:sqlite を使うので 22 以上
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
