@@ -204,6 +204,15 @@ npm run format
 個人利用なら `npm run deploy` が数秒で終わるので、直接デプロイして `npx wrangler tail` で
 ログを見るほうが手軽。
 
+### 自動デプロイ（GitHub Actions）
+
+- PR を出すと `ci.yml` が型チェック・lint・テストを実行する
+- `main` にマージすると `deploy.yml` がテスト → `d1 migrations apply --remote` → `wrangler deploy`
+  → `npm run register` を順に実行する（Actions タブから手動実行も可）
+- 必要な Secrets（Settings > Secrets and variables > Actions）:
+  `CLOUDFLARE_API_TOKEN`（Workers Scripts と D1 を Edit できるトークン）、`CLOUDFLARE_ACCOUNT_ID`、`DISCORD_BOT_TOKEN`
+- Worker 側の secret（`wrangler secret put DISCORD_BOT_TOKEN`）はデプロイしても消えないので、登録し直す必要はない
+
 ### 新しい機能を足すとき
 
 1. `src/features/<機能名>/index.ts` で `Feature` を default export する

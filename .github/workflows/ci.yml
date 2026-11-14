@@ -1,10 +1,9 @@
-# push と PR のたびに型チェック・lint・テストを走らせる。
+# PR のたびに型チェック・lint・テストを走らせる。
 # 失敗すると PR に ❌ が付くので、main にマージする前に気づける。
+# main に入ったあとのチェックとデプロイは deploy.yml が行う。
 name: ci
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 concurrency:
