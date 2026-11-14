@@ -62,7 +62,7 @@ async function promptOne(env: Env, habit: Habit, scheduledAt: number, now: numbe
 
   // 寝ている間に何日も止まっていた場合など、もう締め切った日は聞かない
   if (date < todayOf(env, now)) {
-    await repo.finishPrompt(env.DB, habit.id, next, now);
+    await repo.finishPrompt(env.DB, habit.id, next, now, { posted: false });
     return;
   }
 
@@ -76,7 +76,7 @@ async function promptOne(env: Env, habit: Habit, scheduledAt: number, now: numbe
     now,
   });
   if (!created) {
-    await repo.finishPrompt(env.DB, habit.id, next, now);
+    await repo.finishPrompt(env.DB, habit.id, next, now, { posted: false });
     return;
   }
 
@@ -88,7 +88,7 @@ async function promptOne(env: Env, habit: Habit, scheduledAt: number, now: numbe
     });
     const message = (await response.json()) as { id: string };
     await repo.attachMessage(env.DB, checkinId, habit.channelId, message.id);
-    await repo.finishPrompt(env.DB, habit.id, next, now);
+    await repo.finishPrompt(env.DB, habit.id, next, now, { posted: true });
   } catch (error) {
     console.error('habit prompt failed', habit.id, habit.channelId, describe(error));
     if (error instanceof DiscordApiError && error.isPermanent) {

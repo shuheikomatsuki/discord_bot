@@ -245,3 +245,29 @@ describe('cron の負荷分散', () => {
     expect((await repo.getCheckin(env.DB, habit.id, '2026-11-11'))?.status).toBe('pending');
   });
 });
+
+describe('投稿の失敗', () => {
+  it('401 は毎分やり直し、日付が変わって諦めてもエラー理由は残す', async () => {
+    const habit = await createHabit({ now: jst(13, 20, 59) }); // 21:00 の習慣
+    vi.stubGlobal(
+      'fetch',
+      async () => new Response('{"message": "401: Unauthorized"}', { status: 401 }),
+    );
+    vi.useFakeTimers();
+
+    vi.setSystemTime(jst(13, 21) * 1000);
+    await promptDueHabits(env);
+    let after = await repo.getHabit(env.DB, habit.id);
+    expect(after?.status).toBe('active');
+    expect(after?.nextPromptAt).toBe(jst(13, 21)); // 進めずに次の分で再試行
+    expect(after?.lastError).toContain('401');
+    expect(await repo.getCheckin(env.DB, habit.id, '2026-11-13')).toBeNull();
+
+    // 日付が変わったら前日分は聞かずに次へ進むが、失敗理由は消さない
+    vi.setSystemTime(jst(14, 0, 1) * 1000);
+    await promptDueHabits(env);
+    after = await repo.getHabit(env.DB, habit.id);
+    expect(after?.nextPromptAt).toBe(jst(14, 21));
+    expect(after?.lastError).toContain('401');
+  });
+});

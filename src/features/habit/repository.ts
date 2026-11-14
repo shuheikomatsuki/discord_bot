@@ -206,18 +206,24 @@ export async function claimHabit(
   return (result.meta.changes ?? 0) === 1;
 }
 
+/**
+ * 次回に進めてロックを外す。last_error は「実際に投稿できたとき」だけ消す。
+ * 投稿せずに日付だけ進めた場合（締め切り済み・記録済み）に消すと、直前の失敗理由が見えなくなるため。
+ */
 export async function finishPrompt(
   db: D1Database,
   id: string,
   nextPromptAt: number | null,
   now: number,
+  opts: { posted: boolean },
 ): Promise<void> {
   await db
     .prepare(
-      `UPDATE habits SET next_prompt_at = ?2, lease_until = NULL, last_error = NULL, updated_at = ?3
+      `UPDATE habits SET next_prompt_at = ?2, lease_until = NULL,
+         last_error = CASE WHEN ?4 = 1 THEN NULL ELSE last_error END, updated_at = ?3
        WHERE id = ?1`,
     )
-    .bind(id, nextPromptAt, now)
+    .bind(id, nextPromptAt, now, opts.posted ? 1 : 0)
     .run();
 }
 
