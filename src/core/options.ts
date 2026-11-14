@@ -56,6 +56,18 @@ export function getInteger(
   return option?.type === ApplicationCommandOptionType.Integer ? Number(option.value) : undefined;
 }
 
+/** NUMBER 型（小数可）。INTEGER 型が来ても数値として受け取る */
+export function getNumber(
+  options: APIApplicationCommandInteractionDataBasicOption[],
+  name: string,
+): number | undefined {
+  const option = find(options, name);
+  return option?.type === ApplicationCommandOptionType.Number ||
+    option?.type === ApplicationCommandOptionType.Integer
+    ? Number(option.value)
+    : undefined;
+}
+
 export function getBoolean(
   options: APIApplicationCommandInteractionDataBasicOption[],
   name: string,

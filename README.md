@@ -5,8 +5,9 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 - スラッシュコマンド（HTTP Interactions 方式）
 - リマインダー機能：作成 / 一覧 / 詳細 / 編集 / 一時停止・再開 / 削除
 - 繰り返し（周期・cron）、繰り返し回数、メンション対象（ユーザー / ロール / @everyone）を指定可能
+- 習慣化・目標達成：毎日のチェックイン、連続記録とフリーズ、週次・月次の振り返り、絵文字カレンダー、XP・レベル・バッジ
 
-設計の詳細は [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) と [`docs/REMINDER.md`](docs/REMINDER.md)。
+設計の詳細は [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/REMINDER.md`](docs/REMINDER.md)、[`docs/HABIT.md`](docs/HABIT.md)。
 
 ---
 
@@ -23,7 +24,15 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 /remind resume id:<ID>
 /remind delete id:<ID>
 /ping
+
+/habit add   name:<名前> time:<21:00> [days] [channel] [auto_freeze]
+/habit list | done | freeze | edit | pause | resume | delete | settings
+/goal  add   name:<目標> [target] [unit] [start] [deadline]
+/goal  log | list | show | complete | delete
+/stats week | month | profile | ranking | reflections
 ```
+
+習慣・目標の詳しい使い方は [`docs/HABIT.md`](docs/HABIT.md)。
 
 ### `every` と `cron` の使い分け
 
