@@ -5,6 +5,7 @@ Cloudflare Workers + Hono + D1 で動く Discord Bot。完全に無料枠の中�
 - スラッシュコマンド（HTTP Interactions 方式）
 - リマインダー機能：作成 / 一覧 / 詳細 / 編集 / 一時停止・再開 / 削除
 - 繰り返し（周期・cron）、繰り返し回数、メンション対象（ユーザー / ロール / @everyone）を指定可能
+- あとで読む：自分のチャンネルに貼った記事 URL を毎日数件ずつ紹介し、ボタンで既読・スヌーズ管理（[`docs/READ_LATER.md`](docs/READ_LATER.md)）
 
 設計の詳細は [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) と [`docs/REMINDER.md`](docs/REMINDER.md)。
 

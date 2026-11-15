@@ -14,7 +14,16 @@
     "DISCORD_APPLICATION_ID": "1334491224127569940",
     "DISCORD_PUBLIC_KEY": "8189f9b158fe387b1a8ef07bc8553b4cbae2889524b8a30ff7867b67fc290eda",
     "DISCORD_GUILD_ID": "1211154854207160440",
-    "DEFAULT_TIMEZONE": "Asia/Tokyo"
+    "DEFAULT_TIMEZONE": "Asia/Tokyo",
+
+    // 「あとで読む」機能（docs/READ_LATER.md）。SOURCE_CHANNEL_ID と OWNER_ID が空なら無効。
+    // Discord の開発者モードを ON にして、チャンネル / 自分のアイコンを右クリック >「ID をコピー」
+    "READ_LATER_SOURCE_CHANNEL_ID": "",
+    "READ_LATER_NOTIFY_CHANNEL_ID": "",
+    "READ_LATER_OWNER_ID": "",
+    "READ_LATER_DIGEST_TIME": "08:00",
+    "READ_LATER_DIGEST_COUNT": "3",
+    "READ_LATER_SNOOZE_DAYS": "7"
   },
 
   // DISCORD_BOT_TOKEN は secret。`wrangler secret put DISCORD_BOT_TOKEN` で設定する

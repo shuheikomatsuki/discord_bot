@@ -1,5 +1,6 @@
 import type {
   APIInteractionResponseCallbackData,
+  APIMessage,
   RESTPostAPIChannelMessageJSONBody,
 } from 'discord-api-types/v10';
 
@@ -62,6 +63,31 @@ export function createMessage(
   body: RESTPostAPIChannelMessageJSONBody,
 ): Promise<Response> {
   return request('POST', `/channels/${channelId}/messages`, { token, body });
+}
+
+/**
+ * チャンネルの履歴を取る。`after` を渡すとその ID より新しいものを最大 `limit` 件返す
+ * （返る配列の並びは新しい順なので、呼び出し側で並べ直すこと）。
+ * 本文を読むには Developer Portal で Message Content Intent を ON にしておく必要がある。
+ */
+export async function getChannelMessages(
+  token: string,
+  channelId: string,
+  query: { after?: string; limit?: number } = {},
+): Promise<APIMessage[]> {
+  const params = new URLSearchParams();
+  if (query.after) params.set('after', query.after);
+  params.set('limit', String(query.limit ?? 100));
+  const response = await request('GET', `/channels/${channelId}/messages?${params}`, { token });
+  return response.json();
+}
+
+export async function getChannel(
+  token: string,
+  channelId: string,
+): Promise<{ id: string; guild_id?: string; name?: string }> {
+  const response = await request('GET', `/channels/${channelId}`, { token });
+  return response.json();
 }
 
 /**

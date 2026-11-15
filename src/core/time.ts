@@ -102,7 +102,10 @@ export function fromZonedParts(
 }
 
 /** Discord のタイムスタンプ記法。ユーザーそれぞれのローカル時刻で表示される */
-export function discordTimestamp(epochSeconds: number, style: 'f' | 'F' | 'R' | 't' = 'f'): string {
+export function discordTimestamp(
+  epochSeconds: number,
+  style: 'f' | 'F' | 'R' | 't' | 'D' = 'f',
+): string {
   return `<t:${Math.floor(epochSeconds)}:${style}>`;
 }
 

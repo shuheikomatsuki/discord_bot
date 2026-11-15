@@ -1,4 +1,5 @@
 import ping from '../features/ping';
+import readLater from '../features/readLater';
 import reminder from '../features/reminder';
 import type { Command, ComponentHandler, CronJob, Feature, ModalHandler } from './types';
 
@@ -6,7 +7,7 @@ import type { Command, ComponentHandler, CronJob, Feature, ModalHandler } from '
  * ★ 新機能を追加するときに触るのはこの配列だけ。
  * ここがルーティング表・コマンド登録定義・cron ジョブ一覧のすべての供給源になる。
  */
-export const features: Feature[] = [ping, reminder];
+export const features: Feature[] = [ping, reminder, readLater];
 
 /** コマンド名 -> Command */
 export const commandMap: Map<string, Command> = new Map(
