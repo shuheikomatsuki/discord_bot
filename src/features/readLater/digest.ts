@@ -3,12 +3,10 @@ import type { Env } from '../../env';
 import type { ReadLaterConfig } from './config';
 import * as repo from './repository';
 import { digestDateIfDue } from './schedule';
-import { pickItems } from './select';
 import { digestHeader, itemButtons, itemEmbed } from './service';
 import { syncSource } from './sync';
 import { fetchTitle } from './title';
 
-const DAY = 24 * 60 * 60;
 /** 取り込みは毎分ではなく5分おきで十分（紹介は1日1回なので） */
 const SYNC_EVERY_MINUTES = 5;
 
@@ -35,15 +33,10 @@ export async function runReadLater(env: Env, config: ReadLaterConfig, now: numbe
 }
 
 export async function sendDigest(env: Env, config: ReadLaterConfig, now: number): Promise<void> {
-  const candidates = await repo.findCandidates(env.DB, now, now - config.ignoreCooldownDays * DAY);
+  const items = await repo.findQueueHead(env.DB, now, config.digestCount);
   // 紹介できるものが無い日は黙っておく（毎日「ありません」と来るのはうるさいので）
-  if (candidates.length === 0) return;
+  if (items.length === 0) return;
 
-  const picked = pickItems(candidates, config.digestCount, now);
-  const items = await repo.findByIds(
-    env.DB,
-    picked.map((p) => p.id),
-  );
   const unread = await repo.countUnread(env.DB);
 
   await createMessage(env.DISCORD_BOT_TOKEN, config.notifyChannelId, {

@@ -4,7 +4,6 @@ import { fromZonedParts } from '../src/core/time';
 import type { Env } from '../src/env';
 import { loadConfig, type ReadLaterConfig } from '../src/features/readLater/config';
 import { digestDateIfDue } from '../src/features/readLater/schedule';
-import { pickItems, weightOf } from '../src/features/readLater/select';
 import {
   compareSnowflakes,
   itemsFrom,
@@ -17,8 +16,6 @@ import {
   isXStatusUrl,
   normalizeUrl,
 } from '../src/features/readLater/urls';
-
-const DAY = 24 * 60 * 60;
 
 describe('extractUrls', () => {
   it('本文中の URL をすべて取り出す（文末の句読点・括弧は含めない）', () => {
@@ -92,38 +89,6 @@ describe('extractTitle', () => {
 
   it('どちらも無ければ null', () => {
     expect(extractTitle('<html></html>')).toBeNull();
-  });
-});
-
-describe('pickItems', () => {
-  const now = 1_800_000_000;
-  const old = { id: 'a', savedAt: now - 100 * DAY, notifyCount: 0 };
-  const fresh = { id: 'b', savedAt: now - 1 * DAY, notifyCount: 0 };
-  const repeated = { id: 'c', savedAt: now - 10 * DAY, notifyCount: 4 };
-  const items = [old, fresh, repeated];
-
-  it('指定件数を重複なく選ぶ', () => {
-    const picked = pickItems(items, 2, now, () => 0.5);
-    expect(picked).toHaveLength(2);
-    expect(new Set(picked.map((p) => p.id)).size).toBe(2);
-  });
-
-  it('候補より多く頼まれたら全部', () => {
-    expect(
-      pickItems(items, 10, now)
-        .map((p) => p.id)
-        .sort(),
-    ).toEqual(['a', 'b', 'c']);
-  });
-
-  it('古い記事・未紹介の記事ほど重い', () => {
-    expect(weightOf(old, now)).toBeGreaterThan(weightOf(fresh, now));
-    expect(weightOf(fresh, now)).toBeGreaterThan(weightOf(repeated, now));
-  });
-
-  it('乱数が 0 なら一番手前、1 に近ければ一番奥', () => {
-    expect(pickItems(items, 1, now, () => 0)[0]?.id).toBe('a');
-    expect(pickItems(items, 1, now, () => 0.999999)[0]?.id).toBe('c');
   });
 });
 

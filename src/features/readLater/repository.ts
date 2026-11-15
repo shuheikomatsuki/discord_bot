@@ -49,40 +49,24 @@ export async function findById(db: D1Database, id: string): Promise<Item | null>
   return row ? toItem(row) : null;
 }
 
-export async function findByIds(db: D1Database, ids: string[]): Promise<Item[]> {
-  if (ids.length === 0) return [];
-  const placeholders = ids.map((_, i) => `?${i + 1}`).join(', ');
-  const { results } = await db
-    .prepare(`SELECT ${COLUMNS} FROM read_later_items WHERE id IN (${placeholders})`)
-    .bind(...ids)
-    .all<ItemRow>();
-  const byId = new Map((results ?? []).map((row) => [row.id, toItem(row)]));
-  return ids.flatMap((id) => byId.get(id) ?? []);
-}
-
 /**
- * 今日の紹介候補。未読で、スヌーズ明けで、最近流したばかりではないもの。
- * 選ぶのは JS 側（select.ts）なので、ここでは重み計算に要る列だけ返す。
+ * キューの先頭から limit 件（FIFO）。
+ * 並び順は「キューに入った時刻」= 最後に紹介した時刻、まだ一度も紹介していなければ保存した時刻。
+ * 紹介された記事はキューの最後尾に並び直すので、未読が一巡するまで同じ記事は出てこない。
+ * スヌーズ中の記事は飛ばし、明けたら元の位置（＝最後に紹介した時点）から並ぶ。
  */
-export async function findCandidates(
-  db: D1Database,
-  now: number,
-  notifiedBefore: number,
-): Promise<{ id: string; savedAt: number; notifyCount: number }[]> {
+export async function findQueueHead(db: D1Database, now: number, limit: number): Promise<Item[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, saved_at, notify_count FROM read_later_items
+      `SELECT ${COLUMNS} FROM read_later_items
         WHERE status = 'unread'
           AND (snooze_until IS NULL OR snooze_until <= ?1)
-          AND (last_notified_at IS NULL OR last_notified_at <= ?2 OR snooze_until IS NOT NULL)`,
+        ORDER BY COALESCE(last_notified_at, saved_at) ASC, saved_at ASC, id ASC
+        LIMIT ?2`,
     )
-    .bind(now, notifiedBefore)
-    .all<{ id: string; saved_at: number; notify_count: number }>();
-  return (results ?? []).map((r) => ({
-    id: r.id,
-    savedAt: r.saved_at,
-    notifyCount: r.notify_count,
-  }));
+    .bind(now, limit)
+    .all<ItemRow>();
+  return (results ?? []).map(toItem);
 }
 
 export async function countUnread(db: D1Database): Promise<number> {

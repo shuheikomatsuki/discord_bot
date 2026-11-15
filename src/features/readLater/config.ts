@@ -14,8 +14,6 @@ export interface ReadLaterConfig {
   digestMinute: number;
   digestCount: number;
   snoozeDays: number;
-  /** ボタンを押さずに流した記事を、次に紹介するまで空ける日数 */
-  ignoreCooldownDays: number;
   timeZone: string;
 }
 
@@ -47,7 +45,6 @@ export function loadConfig(env: Env): ReadLaterConfig | null {
     digestMinute: minute >= 0 && minute <= 59 ? minute : 0,
     digestCount: intOr(env.READ_LATER_DIGEST_COUNT, 3, 1, MAX_DIGEST_COUNT),
     snoozeDays: intOr(env.READ_LATER_SNOOZE_DAYS, 7, 1, 365),
-    ignoreCooldownDays: 3,
     timeZone: env.DEFAULT_TIMEZONE || 'Asia/Tokyo',
   };
 }
